@@ -5,7 +5,10 @@ require("dotenv").config();
 async function dbConnect() {
   // use mongoose to connect this app to our database on mongoDB using the DB_URL (connection string)
   mongoose
-    .connect(process.env.DB_URL)
+    .connect(process.env.DB_URL, {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    })
     .then(() => {
       console.log("Successfully connected to MongoDB Atlas!");
     })
@@ -13,6 +16,7 @@ async function dbConnect() {
     .catch((error) => {
       console.log("Unable to connect to MongoDB Atlas!");
       console.error(error);
+      throw error;
     });
 }
 
