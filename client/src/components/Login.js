@@ -18,6 +18,8 @@ function Login() {
           password,
         }
       );
+      // Save the token in localStorage
+      localStorage.setItem("token", response.data.token);
       console.log("Login successful:", response.data);
       navigate("/notes"); // Redirect to the notes page
     } catch (err) {

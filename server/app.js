@@ -99,9 +99,9 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// authentication endpoint
-app.get("/auth-endpoint", auth, (request, response) => {
-  response.json({ message: "You are authorized to access me" });
+// Protect the notes route
+app.get("/notes", auth, (req, res) => {
+  res.json({ message: "Here are your notes..." });
 });
 
 module.exports = app;
