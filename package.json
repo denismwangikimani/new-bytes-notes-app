@@ -4,7 +4,8 @@
     "description": "a simple notes app",
     "main": "index.js",
     "scripts": {
-        "start": "node index.js",
+        "start": "node server/index.js",
+        "dev": "nodemon server/index.js",
         "test": "echo \"Error: no test specified\" && exit 1"
     },
     "author": "",
