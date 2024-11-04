@@ -18,12 +18,15 @@ function Login() {
           password,
         }
       );
-      // Save the token in localStorage
       localStorage.setItem("token", response.data.token);
       console.log("Login successful:", response.data);
-      navigate("/notes"); // Redirect to the notes page
+      navigate("/notes");
     } catch (err) {
-      setError("Login failed. Please try again.");
+      if (err.response && err.response.data) {
+        setError(err.response.data.message);
+      } else {
+        setError("Login failed. Please try again.");
+      }
     }
   };
 

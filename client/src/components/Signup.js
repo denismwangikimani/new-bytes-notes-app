@@ -23,7 +23,11 @@ function Signup() {
       console.log("Signup successful:", response.data);
       navigate("/notes");
     } catch (err) {
-      setError("Signup failed. Please try again.");
+      if (err.response && err.response.data) {
+        setError(err.response.data.message);
+      } else {
+        setError("Signup failed. Please try again.");
+      }
     }
   };
 
