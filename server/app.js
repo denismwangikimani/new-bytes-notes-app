@@ -2,6 +2,7 @@
 const express = require("express");
 const dbConnect = require("./db/dbConnect");
 const User = require("./db/userModel");
+const Note = require("./db/noteModel");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const auth = require("./auth");
@@ -88,9 +89,13 @@ app.post("/login", async (req, res) => {
     }
 
     // Create a JWT token if the password is correct
-    const token = jwt.sign({ email: user.email }, "secret", {
-      expiresIn: "24h",
-    });
+    const token = jwt.sign(
+      { email: user.email, userId: user._id.toString() },
+      "secret",
+      {
+        expiresIn: "24h",
+      }
+    );
 
     // Respond with the token if the user is logged in successfully
     res.status(200).json({ message: "Login successful!", token: token });
@@ -100,8 +105,102 @@ app.post("/login", async (req, res) => {
 });
 
 // Protect the notes route
-app.get("/notes", auth, (req, res) => {
-  res.json({ message: "Here are your notes..." });
+// app.get("/notes", auth, (req, res) => {
+//   res.json({ message: "Here are your notes..." });
+// });
+
+//get all notes saved by the user
+app.get("/notes", auth, async (req, res) => {
+  try {
+    // Get the user's ID from the decoded token
+    const userId = req.user.userId;
+    // Find all notes saved by the user
+    const notes = await Note.find({ user: userId });
+    res.json({ notes });
+  } catch (error) {
+    res.status(500).json({ message: "Error getting notes", error });
+  }
+});
+
+//create a new note
+app.post("/notes", auth, async (req, res) => {
+  const { title, content } = req.body;
+
+  // Validate request data
+  if (!title || !content) {
+    return res.status(400).json({ message: "Title and Content are required!" });
+  }
+
+  try {
+    // Get the user's ID from the decoded token
+    const userId = req.user.userId;
+
+    // Return an error message if the user ID is not found in the token
+    if (!userId) {
+      return res.status(401).json({ message: "User ID not found in token" });
+    }
+    // Create a new note to save in the database, by passing the title, content and the user id
+    const newNote = new Note({
+      title,
+      content,
+      user: userId,
+    });
+    await newNote.save();
+
+    // Respond with success message if note is created successfully
+    res
+      .status(201)
+      .json({ message: "Note created successfully!", note: newNote });
+  } catch (error) {
+    res.status(500).json({ message: "Error creating note", error });
+  }
+});
+
+//update a note by id
+app.put("/notes/:id", auth, async (req, res) => {
+  const { title, content } = req.body;
+
+  // Validate request data
+  try {
+    // Get the user's ID from the decoded token
+    const userId = req.user.userId;
+    // Find the note by id and update it
+    const note = await Note.findOneAndUpdate(
+      { _id: req.params.id, user: userId },
+      { title, content },
+      { new: true }
+    );
+    // Respond with success message if note is updated successfully
+    if (!note) {
+      return res.status(404).json({ message: "Note not found" });
+    }
+    res.status(200).json({ message: "Note updated successfully", note });
+    // Respond with error message if note is not updated successfully
+  } catch (error) {
+    res.status(500).json({ message: "Error updating note", error });
+  }
+});
+
+//delete a note by id
+app.delete("/notes/:id", auth, async (req, res) => {
+  try {
+    // Get the user's ID from the decoded token
+    const userId = req.user.userId;
+    // Find the note by id and delete it
+    const note = await Note.findOneAndDelete({
+      _id: req.params.id,
+      user: userId,
+    });
+    //Respond with error message if note is not deleted successfully
+    if (!note) {
+      return res.status(404).json({ message: "Note not found" });
+    }
+    //Respond with success message if note is deleted successfully
+    res.status(200).json({ message: "Note deleted successfully" });
+  } catch (error) {
+    //Respond with error message if note is not deleted successfully
+    res.status(500).json({ message: "Error deleting note", error });
+  }
 });
 
 module.exports = app;
