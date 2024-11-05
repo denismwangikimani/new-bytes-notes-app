@@ -124,12 +124,11 @@ app.get("/notes", auth, async (req, res) => {
 
 //create a new note
 app.post("/notes", auth, async (req, res) => {
-  const { title, content } = req.body;
+  let { title, content } = req.body;
 
-  // Validate request data
-  if (!title || !content) {
-    return res.status(400).json({ message: "Title and Content are required!" });
-  }
+  // If title or content is blank, assign a default value or return an error
+  if (!title) title = "Untitled Note";
+  if (!content) content = "No content yet.";
 
   try {
     // Get the user's ID from the decoded token
