@@ -21,7 +21,7 @@ function Notes() {
   const handleCreateNote = async () => {
     try {
       const response = await api.post("/notes", {
-        title: "",
+        title: "Untitled Note",
         content: "",
       });
       setNotes((prev) => [response.data.note, ...prev]);

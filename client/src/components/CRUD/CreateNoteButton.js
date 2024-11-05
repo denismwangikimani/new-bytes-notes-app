@@ -3,11 +3,9 @@ import { PenSquare } from "lucide-react";
 import "./notes.css";
 
 const CreateNoteButton = ({ onCreate }) => {
-  const handleCreate = async () => {
-    const title = prompt("Enter note title:");
-    if (title) {
-      onCreate(title);
-    }
+  const handleCreate = () => {
+    // Directly call onCreate without prompting for title
+    onCreate();
   };
 
   return (
