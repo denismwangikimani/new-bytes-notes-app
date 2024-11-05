@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import "./notes.css";
 
 const NoteEditor = ({ note, onUpdate }) => {
   const [content, setContent] = useState(note?.content || "");
   const [title, setTitle] = useState(note?.title || "");
+  const titleUpdateTimer = useRef(null);
 
   useEffect(() => {
     setContent(note?.content || "");
@@ -23,10 +24,34 @@ const NoteEditor = ({ note, onUpdate }) => {
   const handleContentChange = (newContent) => {
     setContent(newContent);
 
-    // Dynamically set title based on first sentence if title is still "Untitled Note"
+    // Only update title if it's currently "Untitled Note" or empty
     if (title === "Untitled Note" || title === "") {
-      const firstSentence = newContent.split(".")[0];
-      setTitle(firstSentence || "Untitled Note");
+      // Find the first sentence by looking for period, question mark, or exclamation mark
+      const sentenceEnd = Math.min(
+        ...[
+          newContent.indexOf(". "),
+          newContent.indexOf("? "),
+          newContent.indexOf("! "),
+        ].filter((pos) => pos !== -1)
+      );
+
+      let firstSentence;
+      if (sentenceEnd === Infinity) {
+        // If no sentence ending is found, use all the content
+        firstSentence = newContent;
+      } else {
+        // Include the punctuation mark in the sentence
+        firstSentence = newContent.slice(0, sentenceEnd + 1);
+      }
+
+      // Only update title if we have actual content
+      if (firstSentence.trim()) {
+        // Use a timer to update the title incrementally
+        clearTimeout(titleUpdateTimer.current);
+        titleUpdateTimer.current = setTimeout(() => {
+          setTitle(firstSentence.trim());
+        }, 5000);
+      }
     }
   };
 

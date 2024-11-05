@@ -1,4 +1,3 @@
-// Notes.js
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import NotesList from "./CRUD/NoteList";
@@ -18,14 +17,25 @@ function Notes() {
     headers: { Authorization: `Bearer ${token}` },
   });
 
+  // Helper function to sort notes by most recent
+  const sortNotes = (notesArray) => {
+    return [...notesArray].sort((a, b) => {
+      const dateA = new Date(a.updatedAt || a.createdAt);
+      const dateB = new Date(b.updatedAt || b.createdAt);
+      return dateB - dateA;
+    });
+  };
+
   const handleCreateNote = async () => {
     try {
       const response = await api.post("/notes", {
         title: "Untitled Note",
         content: "",
       });
-      setNotes((prev) => [response.data.note, ...prev]);
-      setActiveNote(response.data.note);
+      const newNote = response.data.note;
+      // Add the new note and sort the array
+      setNotes((prev) => sortNotes([newNote, ...prev]));
+      setActiveNote(newNote);
     } catch (error) {
       setError("Error creating note");
       console.error(error);
@@ -35,10 +45,16 @@ function Notes() {
   const handleUpdateNote = async (id, updates) => {
     try {
       const response = await api.put(`/notes/${id}`, updates);
-      setNotes((prev) =>
-        prev.map((note) => (note._id === id ? response.data.note : note))
-      );
-      setActiveNote(response.data.note);
+      const updatedNote = response.data.note;
+      setNotes((prev) => {
+        // Create new array with the updated note
+        const updatedNotes = prev.map((note) =>
+          note._id === id ? updatedNote : note
+        );
+        // Sort the array to ensure updated note moves to top
+        return sortNotes(updatedNotes);
+      });
+      setActiveNote(updatedNote);
     } catch (error) {
       setError("Error updating note");
       console.error(error);
@@ -62,11 +78,8 @@ function Notes() {
     const fetchNotes = async () => {
       try {
         const response = await api.get("/notes");
-        setNotes(
-          response.data.notes.sort(
-            (a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)
-          )
-        );
+        // Sort notes when initially fetching
+        setNotes(sortNotes(response.data.notes));
       } catch (error) {
         setError("Error fetching notes");
         console.error(error);
