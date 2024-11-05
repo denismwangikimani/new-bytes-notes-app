@@ -110,12 +110,49 @@ app.post("/login", async (req, res) => {
 // });
 
 //get all notes saved by the user
+//get all notes saved by the user
 app.get("/notes", auth, async (req, res) => {
   try {
     // Get the user's ID from the decoded token
     const userId = req.user.userId;
-    // Find all notes saved by the user
-    const notes = await Note.find({ user: userId });
+
+    // Parse query parameters for search and filtering
+    const {
+      search,
+      createdAtStart,
+      createdAtEnd,
+      updatedAtStart,
+      updatedAtEnd,
+    } = req.query;
+    const filterQuery = { user: userId };
+
+    // Apply search filter if provided
+    if (search) {
+      filterQuery.$text = { $search: search };
+    }
+
+    // Apply date range filters if provided
+    if (createdAtStart) {
+      filterQuery.createdAt = { $gte: new Date(createdAtStart) };
+    }
+    if (createdAtEnd) {
+      filterQuery.createdAt = {
+        ...(filterQuery.createdAt || {}),
+        $lte: new Date(createdAtEnd),
+      };
+    }
+    if (updatedAtStart) {
+      filterQuery.updatedAt = { $gte: new Date(updatedAtStart) };
+    }
+    if (updatedAtEnd) {
+      filterQuery.updatedAt = {
+        ...(filterQuery.updatedAt || {}),
+        $lte: new Date(updatedAtEnd),
+      };
+    }
+
+    // Find all notes that match the filter
+    const notes = await Note.find(filterQuery);
     res.json({ notes });
   } catch (error) {
     res.status(500).json({ message: "Error getting notes", error });
