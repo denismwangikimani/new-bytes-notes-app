@@ -127,7 +127,7 @@ app.post("/notes", auth, async (req, res) => {
   let { title, content } = req.body;
 
   // If title or content is blank, assign a default value or return an error
-  if (!title) title = "";
+  if (!title) title = "Untitled Note";
   if (!content) content = "";
 
   try {
