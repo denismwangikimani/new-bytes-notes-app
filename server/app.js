@@ -127,8 +127,8 @@ app.post("/notes", auth, async (req, res) => {
   let { title, content } = req.body;
 
   // If title or content is blank, assign a default value or return an error
-  if (!title) title = "Untitled Note";
-  if (!content) content = "No content yet.";
+  if (!title) title = "";
+  if (!content) content = "";
 
   try {
     // Get the user's ID from the decoded token

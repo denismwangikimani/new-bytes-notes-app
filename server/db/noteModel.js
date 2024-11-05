@@ -9,11 +9,11 @@ const noteSchema = new mongoose.Schema({
     },
     title: {
         type: String,
-        required: true
+        required: false
     },
     content: {
         type: String,
-        required: true
+        required: false
     },
     createdAt: {
         type: Date,

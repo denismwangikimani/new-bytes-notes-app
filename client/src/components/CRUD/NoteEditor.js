@@ -15,10 +15,20 @@ const NoteEditor = ({ note, onUpdate }) => {
       if (note?._id && (content !== note.content || title !== note.title)) {
         onUpdate(note._id, { title, content });
       }
-    }, 1000);
+    }, 500);
 
     return () => clearTimeout(timer);
   }, [content, title, note, onUpdate]);
+
+  const handleContentChange = (newContent) => {
+    setContent(newContent);
+
+    // Dynamically set title based on first sentence if title is still "Untitled Note"
+    if (title === "Untitled Note" || title === "") {
+      const firstSentence = newContent.split(".")[0];
+      setTitle(firstSentence || "Untitled Note");
+    }
+  };
 
   return (
     <div className="editor-container">
@@ -31,7 +41,7 @@ const NoteEditor = ({ note, onUpdate }) => {
       />
       <textarea
         value={content}
-        onChange={(e) => setContent(e.target.value)}
+        onChange={(e) => handleContentChange(e.target.value)}
         className="editor-content"
         placeholder="Start typing your note..."
       />
