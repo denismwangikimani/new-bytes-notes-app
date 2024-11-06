@@ -156,3 +156,124 @@
   padding: 0.5rem;
   border-radius: 4px;
 }
+
+.search-container,
+.filter-container {
+  position: relative;
+  margin: 10px 0;
+}
+
+.clear-button {
+  position: absolute;
+  right: 70px; /* Adjust based on your layout */
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: #666;
+  padding: 0 5px;
+}
+
+.clear-button:hover {
+  color: #333;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Add a subtle transition for loading state */
+.notes-list {
+  transition: opacity 0.2s ease-in-out;
+}
+
+.notes-list.loading {
+  opacity: 0.7;
+}
+
+/* Update only search and filter styles */
+.search-container input,
+.filter-container input {
+  width: 100%;
+  padding: 4px;
+  border: none;
+  background-color: #1a1f2e;
+  color: #ffffff;
+  font-size: 14px;
+  height: 24px;
+  border-radius: 0;
+}
+
+.search-container input {
+  width: calc(80% - 70px);
+  display: inline-block;
+}
+
+.search-container button,
+.filter-container button {
+  background-color: #1a1f2e;
+  color: #ffffff;
+  border: none;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 14px;
+  height: 32px;
+}
+
+.search-container {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 1rem;
+}
+
+.filter-container {
+  margin-bottom: 1rem;
+}
+
+.filter-container label {
+  display: block;
+  color: #ffffff;
+  margin-bottom: 0.5rem;
+  font-size: 14px;
+}
+
+.filter-container input[type="date"] {
+  width: calc(80% - 70px);
+  margin-right: 4px;
+}
+
+/* Sidebar transition styles */
+.notes-sidebar {
+  width: 250px;
+  height: 100vh;
+  background-color: #0f1523;
+  color: white;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.3s ease;
+  position: relative;
+  z-index: 50;
+}
+
+.notes-sidebar.closed {
+  transform: translateX(-250px);
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+  .notes-sidebar {
+    position: absolute;
+    height: 100%;
+    transform: translateX(-250px);
+  }
+
+  .notes-sidebar.open {
+    transform: translateX(0);
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
+  }
+}

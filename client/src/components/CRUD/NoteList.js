@@ -11,69 +11,94 @@ const NotesList = ({
   onCreate,
   onSearch,
   onFilter,
+  isLoading,
 }) => {
   const [searchText, setSearchText] = useState("");
-  const [createdAtStart, setCreatedAtStart] = useState("");
-  const [createdAtEnd, setCreatedAtEnd] = useState("");
-  const [updatedAtStart, setUpdatedAtStart] = useState("");
-  const [updatedAtEnd, setUpdatedAtEnd] = useState("");
+  const [filterDate, setFilterDate] = useState("");
 
   const handleSearch = () => {
+    if (isLoading) return;
     onSearch(searchText);
   };
 
   const handleFilter = () => {
-    onFilter({
-      createdAtStart,
-      createdAtEnd,
-      updatedAtStart,
-      updatedAtEnd,
-    });
+    if (isLoading) return;
+    onFilter(filterDate);
+  };
+
+  const handleSearchKeyPress = (e) => {
+    if (e.key === "Enter") {
+      handleSearch();
+    }
+  };
+
+  const handleFilterKeyPress = (e) => {
+    if (e.key === "Enter") {
+      handleFilter();
+    }
+  };
+
+  const handleSearchClear = () => {
+    setSearchText("");
+    onSearch("");
+  };
+
+  const handleFilterClear = () => {
+    setFilterDate("");
+    onFilter("");
   };
 
   return (
     <div className="notes-sidebar">
-      <CreateNoteButton onCreate={onCreate} />
+      <CreateNoteButton onCreate={onCreate} disabled={isLoading} />
+
       <div className="search-container">
         <input
           type="text"
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
+          onKeyPress={handleSearchKeyPress}
           placeholder="Search notes..."
+          disabled={isLoading}
         />
-        <button onClick={handleSearch}>Search</button>
+        {searchText && (
+          <button
+            onClick={handleSearchClear}
+            className="clear-button"
+            disabled={isLoading}
+          >
+            ×
+          </button>
+        )}
+        <button onClick={handleSearch} disabled={isLoading}>
+          {isLoading ? "Searching..." : "Search"}
+        </button>
       </div>
+
       <div className="filter-container">
-        <label htmlFor="createdAtStart">Created At Start:</label>
+        <label htmlFor="filterDate">Filter by Created Date:</label>
         <input
           type="date"
-          id="createdAtStart"
-          value={createdAtStart}
-          onChange={(e) => setCreatedAtStart(e.target.value)}
+          id="filterDate"
+          value={filterDate}
+          onChange={(e) => setFilterDate(e.target.value)}
+          onKeyPress={handleFilterKeyPress}
+          disabled={isLoading}
         />
-        <label htmlFor="createdAtEnd">Created At End:</label>
-        <input
-          type="date"
-          id="createdAtEnd"
-          value={createdAtEnd}
-          onChange={(e) => setCreatedAtEnd(e.target.value)}
-        />
-        <label htmlFor="updatedAtStart">Updated At Start:</label>
-        <input
-          type="date"
-          id="updatedAtStart"
-          value={updatedAtStart}
-          onChange={(e) => setUpdatedAtStart(e.target.value)}
-        />
-        <label htmlFor="updatedAtEnd">Updated At End:</label>
-        <input
-          type="date"
-          id="updatedAtEnd"
-          value={updatedAtEnd}
-          onChange={(e) => setUpdatedAtEnd(e.target.value)}
-        />
-        <button onClick={handleFilter}>Filter</button>
+        {filterDate && (
+          <button
+            onClick={handleFilterClear}
+            className="clear-button"
+            disabled={isLoading}
+          >
+            ×
+          </button>
+        )}
+        <button onClick={handleFilter} disabled={isLoading}>
+          {isLoading ? "Filtering..." : "Filter"}
+        </button>
       </div>
+
       <div className="notes-list">
         {notes.map((note) => (
           <NoteItem
