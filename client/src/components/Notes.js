@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import axios from "axios";
 import NotesList from "./CRUD/NoteList";
 import NoteEditor from "./CRUD/NoteEditor";
+import EditorHeader from "./CRUD/EditorHeader";
 import { SidebarProvider, useSidebar } from "./CRUD/SidebarContext";
 import "./CRUD/notes.css";
 
@@ -152,6 +153,7 @@ const NotesContent = () => {
         />
       ) : (
         <div className={`empty-state ${!isSidebarOpen ? "full-width" : ""}`}>
+        <EditorHeader onCreate={handleCreateNote} />
           Select a note or create a new one
         </div>
       )}

@@ -6,14 +6,18 @@ import { useSidebar } from "./SidebarContext";
 const EditorHeader = ({ onCreate }) => {
   const { isSidebarOpen } = useSidebar();
 
-  return !isSidebarOpen ? (
+  return (
     <div className="editor-header">
       <div className="editor-controls">
-        <SidebarToggle />
-        <CreateNoteButton onCreate={onCreate} />
+        {!isSidebarOpen && (
+          <>
+            <SidebarToggle />
+            <CreateNoteButton onCreate={onCreate} />
+          </>
+        )}
       </div>
     </div>
-  ) : null;
+  );
 };
 
 export default EditorHeader;
