@@ -16,7 +16,7 @@ const NoteEditor = ({ note, onUpdate }) => {
       if (note?._id && (content !== note.content || title !== note.title)) {
         onUpdate(note._id, { title, content });
       }
-    }, 500);
+    }, 5000);
 
     return () => clearTimeout(timer);
   }, [content, title, note, onUpdate]);
