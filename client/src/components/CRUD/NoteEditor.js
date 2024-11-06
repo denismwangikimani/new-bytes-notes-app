@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
+import EditorHeader from "./EditorHeader";
+import { useSidebar } from "./SidebarContext";
 import "./notes.css";
 
-const NoteEditor = ({ note, onUpdate }) => {
+const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [content, setContent] = useState(note?.content || "");
   const [title, setTitle] = useState(note?.title || "");
   const titleUpdateTimer = useRef(null);
+  const { isSidebarOpen } = useSidebar();
 
   useEffect(() => {
     setContent(note?.content || "");
@@ -56,7 +59,8 @@ const NoteEditor = ({ note, onUpdate }) => {
   };
 
   return (
-    <div className="editor-container">
+    <div className={`editor-container ${!isSidebarOpen ? "full-width" : ""}`}>
+      <EditorHeader onCreate={onCreate} />
       <input
         type="text"
         value={title}

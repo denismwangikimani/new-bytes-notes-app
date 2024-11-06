@@ -277,3 +277,85 @@ button:disabled {
     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
   }
 }
+
+/* Additional CSS to add to notes.css */
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.sidebar-toggle-btn {
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.sidebar-toggle-btn:hover {
+  background-color: #1f2937;
+}
+
+/* Add these styles to your notes.css file */
+.notes-sidebar.hidden {
+  display: none;
+}
+
+.editor-container.full-width {
+  margin-left: 0;
+  width: 100%;
+}
+
+.empty-state.full-width {
+  margin-left: 0;
+  width: 100%;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.editor-controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.editor-container .create-button {
+  background-color: #1f2937;
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: background-color 0.2s;
+}
+
+.editor-container .create-button:hover {
+  background-color: #374151;
+}
+
+.editor-container .sidebar-toggle-btn {
+  background-color: #1f2937;
+  color: white;
+  padding: 0.5rem;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.editor-container .sidebar-toggle-btn:hover {
+  background-color: #374151;
+}

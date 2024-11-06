@@ -2,14 +2,17 @@ import React, { useEffect, useState, useCallback } from "react";
 import axios from "axios";
 import NotesList from "./CRUD/NoteList";
 import NoteEditor from "./CRUD/NoteEditor";
+import { SidebarProvider, useSidebar } from "./CRUD/SidebarContext";
 import "./CRUD/notes.css";
 
-function Notes() {
+const NotesContent = () => {
   const [notes, setNotes] = useState([]);
   const [activeNote, setActiveNote] = useState(null);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [lastQuery, setLastQuery] = useState({ type: 'all', params: null });
+  const [lastQuery, setLastQuery] = useState({ type: "all", params: null });
+  const { isSidebarOpen } = useSidebar();
+
   const API_BASE_URL = "https://bytenotesapp-797ceffec255.herokuapp.com";
   const token = localStorage.getItem("token");
 
@@ -26,26 +29,29 @@ function Notes() {
     });
   };
 
-  const fetchNotes = useCallback(async (queryType = 'all', queryParams = null) => {
-    setIsLoading(true);
-    try {
-      const response = await api.get("/notes", { params: queryParams });
-      setNotes(sortNotes(response.data.notes));
-      setLastQuery({ type: queryType, params: queryParams });
-    } catch (error) {
-      setError("Error fetching notes");
-      console.error(error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [api]);
+  const fetchNotes = useCallback(
+    async (queryType = "all", queryParams = null) => {
+      setIsLoading(true);
+      try {
+        const response = await api.get("/notes", { params: queryParams });
+        setNotes(sortNotes(response.data.notes));
+        setLastQuery({ type: queryType, params: queryParams });
+      } catch (error) {
+        setError("Error fetching notes");
+        console.error(error);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [api]
+  );
 
   const handleSearch = async (searchText) => {
     if (!searchText.trim()) {
       fetchNotes();
       return;
     }
-    fetchNotes('search', { search: searchText });
+    fetchNotes("search", { search: searchText });
   };
 
   const handleFilter = async (filterDate) => {
@@ -53,14 +59,14 @@ function Notes() {
       fetchNotes();
       return;
     }
-    
+
     const startDate = new Date(filterDate);
     const endDate = new Date(filterDate);
     endDate.setHours(23, 59, 59, 999);
 
-    fetchNotes('filter', {
+    fetchNotes("filter", {
       createdAtStart: startDate.toISOString(),
-      createdAtEnd: endDate.toISOString()
+      createdAtEnd: endDate.toISOString(),
     });
   };
 
@@ -72,14 +78,14 @@ function Notes() {
         content: "",
       });
       const newNote = response.data.note;
-      
+
       // If we're in a filtered view, fetch all notes
-      if (lastQuery.type !== 'all') {
+      if (lastQuery.type !== "all") {
         await fetchNotes();
       } else {
-        setNotes(prev => sortNotes([newNote, ...prev]));
+        setNotes((prev) => sortNotes([newNote, ...prev]));
       }
-      
+
       setActiveNote(newNote);
     } catch (error) {
       setError("Error creating note");
@@ -93,8 +99,8 @@ function Notes() {
     try {
       const response = await api.put(`/notes/${id}`, updates);
       const updatedNote = response.data.note;
-      setNotes(prev => {
-        const updatedNotes = prev.map(note =>
+      setNotes((prev) => {
+        const updatedNotes = prev.map((note) =>
           note._id === id ? updatedNote : note
         );
         return sortNotes(updatedNotes);
@@ -110,7 +116,7 @@ function Notes() {
     setIsLoading(true);
     try {
       await api.delete(`/notes/${id}`);
-      setNotes(prev => prev.filter(note => note._id !== id));
+      setNotes((prev) => prev.filter((note) => note._id !== id));
       if (activeNote?._id === id) {
         setActiveNote(null);
       }
@@ -139,12 +145,27 @@ function Notes() {
         isLoading={isLoading}
       />
       {activeNote ? (
-        <NoteEditor note={activeNote} onUpdate={handleUpdateNote} />
+        <NoteEditor
+          note={activeNote}
+          onUpdate={handleUpdateNote}
+          onCreate={handleCreateNote}
+        />
       ) : (
-        <div className="empty-state">Select a note or create a new one</div>
+        <div className={`empty-state ${!isSidebarOpen ? "full-width" : ""}`}>
+          Select a note or create a new one
+        </div>
       )}
       {error && <div className="error-message">{error}</div>}
     </div>
+  );
+};
+
+// Main Notes component wrapped with Provider
+function Notes() {
+  return (
+    <SidebarProvider>
+      <NotesContent />
+    </SidebarProvider>
   );
 }
 

@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import NoteItem from "./NoteItem";
 import CreateNoteButton from "./CreateNoteButton";
+import { SidebarToggle } from "./SidebarToggle";
+import { useSidebar } from "./SidebarContext";
 import "./notes.css";
 
 const NotesList = ({
@@ -15,6 +17,7 @@ const NotesList = ({
 }) => {
   const [searchText, setSearchText] = useState("");
   const [filterDate, setFilterDate] = useState("");
+  const { isSidebarOpen } = useSidebar();
 
   const handleSearch = () => {
     if (isLoading) return;
@@ -49,8 +52,11 @@ const NotesList = ({
   };
 
   return (
-    <div className="notes-sidebar">
-      <CreateNoteButton onCreate={onCreate} disabled={isLoading} />
+    <div className={`notes-sidebar ${!isSidebarOpen ? 'hidden' : ''}`}>
+    <div className="sidebar-header">
+      <CreateNoteButton onCreate={onCreate} />
+      <SidebarToggle />
+    </div>
 
       <div className="search-container">
         <input
