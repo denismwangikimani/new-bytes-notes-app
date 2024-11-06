@@ -124,7 +124,7 @@ function Notes() {
 
   useEffect(() => {
     fetchNotes();
-  }, [fetchNotes]);
+  }, []);
 
   return (
     <div className="notes-container">
