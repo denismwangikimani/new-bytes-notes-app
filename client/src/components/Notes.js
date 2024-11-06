@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import axios from "axios";
 import NotesList from "./CRUD/NoteList";
 import NoteEditor from "./CRUD/NoteEditor";
@@ -26,7 +26,7 @@ function Notes() {
     });
   };
 
-  const fetchNotes = async (queryType = 'all', queryParams = null) => {
+  const fetchNotes = useCallback(async (queryType = 'all', queryParams = null) => {
     setIsLoading(true);
     try {
       const response = await api.get("/notes", { params: queryParams });
@@ -38,7 +38,7 @@ function Notes() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [api]);
 
   const handleSearch = async (searchText) => {
     if (!searchText.trim()) {
@@ -124,7 +124,7 @@ function Notes() {
 
   useEffect(() => {
     fetchNotes();
-  }, []);
+  }, [fetchNotes]);
 
   return (
     <div className="notes-container">
