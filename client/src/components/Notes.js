@@ -152,8 +152,13 @@ const NotesContent = () => {
           onCreate={handleCreateNote}
         />
       ) : (
-        <div className="empty-state-content">
-          Select a note or create a new one
+        <div
+          className={`editor-container ${!isSidebarOpen ? "full-width" : ""}`}
+        >
+          <EditorHeader onCreate={handleCreateNote} />
+          <div className="empty-state-content">
+            Select a note or create a new one
+          </div>
         </div>
       )}
       {error && <div className="error-message">{error}</div>}

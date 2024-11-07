@@ -346,17 +346,6 @@ button:disabled {
 }
 
 /* Update empty state styles */
-.empty-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  color: #6b7280;
-  background-color: white;
-  overflow: hidden;
-  position: relative;
-}
-
 .empty-state-content {
   flex: 1;
   display: flex;
