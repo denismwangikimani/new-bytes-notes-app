@@ -61,19 +61,21 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   return (
     <div className={`editor-container ${!isSidebarOpen ? "full-width" : ""}`}>
       <EditorHeader onCreate={onCreate} />
-      <input
-        type="text"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        className="editor-title"
-        placeholder="Note title..."
-      />
-      <textarea
-        value={content}
-        onChange={(e) => handleContentChange(e.target.value)}
-        className="editor-content"
-        placeholder="Start typing your note..."
-      />
+      <div className="editor-content-wrapper">
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="editor-title"
+          placeholder="Note title..."
+        />
+        <textarea
+          value={content}
+          onChange={(e) => handleContentChange(e.target.value)}
+          className="editor-content"
+          placeholder="Start typing your note..."
+        />
+      </div>
     </div>
   );
 };

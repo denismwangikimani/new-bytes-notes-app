@@ -152,8 +152,7 @@ const NotesContent = () => {
           onCreate={handleCreateNote}
         />
       ) : (
-        <div className={`empty-state ${!isSidebarOpen ? "full-width" : ""}`}>
-        <EditorHeader onCreate={handleCreateNote} />
+        <div className="empty-state-content">
           Select a note or create a new one
         </div>
       )}
