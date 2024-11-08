@@ -12,9 +12,9 @@ export const SidebarToggle = () => {
       aria-label={isSidebarOpen ? "Close sidebar" : "Open sidebar"}
     >
       {isSidebarOpen ? (
-        <PanelRightOpen size={20} />
-      ) : (
         <PanelRightClose size={20} />
+      ) : (
+        <PanelRightOpen size={20} />
       )}
     </button>
   );

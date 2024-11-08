@@ -265,16 +265,39 @@ button:disabled {
 }
 
 /* Mobile styles */
-@media (max-width: 768px) {
+@media screen and (max-width: 768px) {
+  .notes-container {
+    flex-direction: column;
+  }
+
   .notes-sidebar {
-    position: absolute;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
     height: 100%;
-    transform: translateX(-250px);
+    z-index: 100;
+    background-color: #111827;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
   }
 
   .notes-sidebar.open {
     transform: translateX(0);
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
+  }
+
+  .notes-sidebar.hidden {
+    transform: translateX(-100%);
+  }
+
+  /* Hide the editor when sidebar is open */
+  .notes-sidebar.open ~ .editor-container {
+    display: none;
+  }
+
+  /* Ensure the editor fills the screen when sidebar is closed */
+  .editor-container {
+    width: 100%;
   }
 }
 
@@ -337,6 +360,10 @@ button:disabled {
   height: 100vh;
   background-color: white;
   overflow: hidden;
+}
+
+.editor-container.full-width {
+  width: 100%;
 }
 
 .editor-content-wrapper {

@@ -17,7 +17,7 @@ const NotesList = ({
 }) => {
   const [searchText, setSearchText] = useState("");
   const [filterDate, setFilterDate] = useState("");
-  const { isSidebarOpen } = useSidebar();
+  const { isSidebarOpen, toggleSidebar } = useSidebar();
 
   const handleSearch = () => {
     if (isLoading) return;
@@ -51,12 +51,20 @@ const NotesList = ({
     onFilter("");
   };
 
+  // Handle note selection and close sidebar on mobile
+  const handleNoteSelect = (note) => {
+    onNoteSelect(note);
+    if (window.innerWidth <= 768) {
+      toggleSidebar();
+    }
+  };
+
   return (
-    <div className={`notes-sidebar ${!isSidebarOpen ? 'hidden' : ''}`}>
-    <div className="sidebar-header">
-      <CreateNoteButton onCreate={onCreate} />
-      <SidebarToggle />
-    </div>
+    <div className={`notes-sidebar ${isSidebarOpen ? "open" : "hidden"}`}>
+      <div className="sidebar-header">
+        <CreateNoteButton onCreate={onCreate} />
+        <SidebarToggle />
+      </div>
 
       <div className="search-container">
         <input
@@ -111,7 +119,7 @@ const NotesList = ({
             key={note._id}
             note={note}
             isActive={activeNote?._id === note._id}
-            onSelect={() => onNoteSelect(note)}
+            onSelect={() => handleNoteSelect(note)}
             onDelete={() => onDeleteNote(note._id)}
           />
         ))}
