@@ -14,7 +14,7 @@ function Signup() {
     e.preventDefault();
     try {
       await axios.post(
-        "https://bytenotesapp-797ceffec255.herokuapp.com/register",
+        "https://new-bytes-notes-backend.onrender.com/register",
         {
           email,
           username,

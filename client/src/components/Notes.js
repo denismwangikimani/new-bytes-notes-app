@@ -14,7 +14,7 @@ const NotesContent = () => {
   const [lastQuery, setLastQuery] = useState({ type: "all", params: null });
   const { isSidebarOpen } = useSidebar();
 
-  const API_BASE_URL = "https://bytenotesapp-797ceffec255.herokuapp.com";
+  const API_BASE_URL = "https://new-bytes-notes-backend.onrender.com";
   const token = localStorage.getItem("token");
 
   const api = axios.create({
