@@ -23,6 +23,7 @@ Clone the repository:
 
 
 git clone https://github.com/denismwangikimani/new-bytes-notes-app.git
+
 cd BytesTodos
 
 
