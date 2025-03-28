@@ -8,11 +8,15 @@ function Signup() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleSignup = async (e) => {
     e.preventDefault();
+    setIsLoading(true);
+
     try {
+      // First register the user
       await axios.post(
         "https://new-bytes-notes-backend.onrender.com/register",
         {
@@ -21,6 +25,20 @@ function Signup() {
           password,
         }
       );
+
+      // Then immediately log them in to get a token
+      const loginResponse = await axios.post(
+        "https://new-bytes-notes-backend.onrender.com/login",
+        {
+          email,
+          password,
+        }
+      );
+
+      // Store the token in localStorage
+      localStorage.setItem("token", loginResponse.data.token);
+
+      // Now navigate to notes with a valid token
       navigate("/notes");
     } catch (err) {
       if (err.response && err.response.data) {
@@ -28,6 +46,8 @@ function Signup() {
       } else {
         setError("Signup failed. Please try again.");
       }
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -45,6 +65,7 @@ function Signup() {
           onChange={(e) => setEmail(e.target.value)}
           placeholder="Email"
           required
+          disabled={isLoading}
         />
         <input
           type="text"
@@ -52,6 +73,7 @@ function Signup() {
           onChange={(e) => setUsername(e.target.value)}
           placeholder="Username"
           required
+          disabled={isLoading}
         />
         <input
           type="password"
@@ -59,9 +81,12 @@ function Signup() {
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
           required
+          disabled={isLoading}
         />
-        <button type="submit">Sign Up</button>
-        {error && <p>{error}</p>}
+        <button type="submit" disabled={isLoading}>
+          {isLoading ? "Signing up..." : "Sign Up"}
+        </button>
+        {error && <p className="error-message">{error}</p>}
         <p>
           If you already have an account, <Link to="/login">Login here</Link>
         </p>

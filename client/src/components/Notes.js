@@ -18,29 +18,41 @@ const NotesContent = () => {
   const navigate = useNavigate();
 
   const API_BASE_URL = "https://new-bytes-notes-backend.onrender.com";
-  const token = localStorage.getItem("token");
+  //const token = localStorage.getItem("token");
 
-  // Create axios instance with interceptor to handle auth errors
-  const api = axios.create({
-    baseURL: API_BASE_URL,
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  // Create a function to get a fresh API instance with the current token
+  const getApi = useCallback(() => {
+    const currentToken = localStorage.getItem("token");
 
-  // Add response interceptor to handle 401 errors globally
-  api.interceptors.response.use(
-    (response) => response,
-    (error) => {
-      if (error.response && error.response.status === 401) {
-        // Clear invalid token and redirect to login
-        localStorage.removeItem("token");
-        navigate("/login");
-        return Promise.reject(
-          new Error("Authentication expired. Please log in again.")
-        );
-      }
-      return Promise.reject(error);
+    if (!currentToken) {
+      console.log("No token found, redirecting to login");
+      navigate("/login");
+      return null;
     }
-  );
+
+    const api = axios.create({
+      baseURL: API_BASE_URL,
+      headers: { Authorization: `Bearer ${currentToken}` },
+    });
+
+    // Add response interceptor to handle 401 errors globally
+    api.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response && error.response.status === 401) {
+          // Clear invalid token and redirect to login
+          localStorage.removeItem("token");
+          navigate("/login");
+          return Promise.reject(
+            new Error("Authentication expired. Please log in again.")
+          );
+        }
+        return Promise.reject(error);
+      }
+    );
+
+    return api;
+  }, [navigate, API_BASE_URL]);
 
   useEffect(() => {
     const token = localStorage.getItem("token");
@@ -59,8 +71,19 @@ const NotesContent = () => {
     async (queryType = "all", queryParams = null) => {
       setIsLoading(true);
       try {
+        const api = getApi();
+        if (!api) return; // Exit if no valid API instance
+
         const response = await api.get("/notes", { params: queryParams });
-        setNotes(sortNotes(response.data.notes));
+
+        // Check if notes is defined before sorting
+        if (response.data.notes) {
+          setNotes(sortNotes(response.data.notes));
+        } else {
+          // Handle the case when there are no notes
+          setNotes([]);
+        }
+
         setLastQuery({ type: queryType, params: queryParams });
         // Clear any previous errors on successful fetch
         setError(null);
@@ -71,7 +94,7 @@ const NotesContent = () => {
         setIsLoading(false);
       }
     },
-    [api, navigate]
+    [getApi, sortNotes]
   );
 
   const handleSearch = async (searchText) => {
@@ -101,10 +124,8 @@ const NotesContent = () => {
   const handleCreateNote = async () => {
     setIsLoading(true);
     try {
-      // Verify token exists before making request
-      if (!token) {
-        throw new Error("No authentication token found");
-      }
+      const api = getApi();
+      if (!api) return; // Exit if no valid API instance
 
       const response = await api.post("/notes", {
         title: "Untitled Note",
@@ -126,12 +147,6 @@ const NotesContent = () => {
     } catch (error) {
       setError(error.message || "Error creating note");
       console.error("Create note error:", error);
-
-      // If the token is invalid, redirect to login
-      if (error.response && error.response.status === 401) {
-        localStorage.removeItem("token");
-        navigate("/login");
-      }
     } finally {
       setIsLoading(false);
     }
@@ -139,32 +154,45 @@ const NotesContent = () => {
 
   const handleUpdateNote = async (id, updates) => {
     try {
+      const api = getApi();
+      if (!api) return; // Exit if no valid API instance
+
       const response = await api.put(`/notes/${id}`, updates);
       const updatedNote = response.data.note;
+
       setNotes((prev) => {
         const updatedNotes = prev.map((note) =>
           note._id === id ? updatedNote : note
         );
         return sortNotes(updatedNotes);
       });
+
       setActiveNote(updatedNote);
+      // Clear any previous errors on successful update
+      setError(null);
     } catch (error) {
       setError("Error updating note");
-      console.error(error);
+      console.error("Update note error:", error);
     }
   };
 
   const handleDeleteNote = async (id) => {
     setIsLoading(true);
     try {
+      const api = getApi();
+      if (!api) return; // Exit if no valid API instance
+
       await api.delete(`/notes/${id}`);
+
       setNotes((prev) => prev.filter((note) => note._id !== id));
       if (activeNote?._id === id) {
         setActiveNote(null);
       }
+      // Clear any previous errors on successful delete
+      setError(null);
     } catch (error) {
       setError("Error deleting note");
-      console.error(error);
+      console.error("Delete note error:", error);
     } finally {
       setIsLoading(false);
     }
