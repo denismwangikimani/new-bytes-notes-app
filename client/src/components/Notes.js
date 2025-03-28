@@ -1,5 +1,7 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useEffect, useState, useCallback } from "react";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 import NotesList from "./CRUD/NoteList";
 import NoteEditor from "./CRUD/NoteEditor";
 import EditorHeader from "./CRUD/EditorHeader";
@@ -13,14 +15,37 @@ const NotesContent = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [lastQuery, setLastQuery] = useState({ type: "all", params: null });
   const { isSidebarOpen } = useSidebar();
+  const navigate = useNavigate();
 
   const API_BASE_URL = "https://new-bytes-notes-backend.onrender.com";
   const token = localStorage.getItem("token");
 
+  // Create axios instance with interceptor to handle auth errors
   const api = axios.create({
     baseURL: API_BASE_URL,
     headers: { Authorization: `Bearer ${token}` },
   });
+
+  // Add response interceptor to handle 401 errors globally
+  api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      if (error.response && error.response.status === 401) {
+        // Clear invalid token and redirect to login
+        localStorage.removeItem("token");
+        navigate("/login");
+        return Promise.reject(
+          new Error("Authentication expired. Please log in again.")
+        );
+      }
+      return Promise.reject(error);
+    }
+  );
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    console.log("Current token:", token ? "exists" : "missing");
+  }, []);
 
   const sortNotes = (notesArray) => {
     return [...notesArray].sort((a, b) => {
@@ -37,14 +62,16 @@ const NotesContent = () => {
         const response = await api.get("/notes", { params: queryParams });
         setNotes(sortNotes(response.data.notes));
         setLastQuery({ type: queryType, params: queryParams });
+        // Clear any previous errors on successful fetch
+        setError(null);
       } catch (error) {
-        setError("Error fetching notes");
+        setError(error.message || "Error fetching notes");
         console.error(error);
       } finally {
         setIsLoading(false);
       }
     },
-    [api]
+    [api, navigate]
   );
 
   const handleSearch = async (searchText) => {
@@ -74,10 +101,16 @@ const NotesContent = () => {
   const handleCreateNote = async () => {
     setIsLoading(true);
     try {
+      // Verify token exists before making request
+      if (!token) {
+        throw new Error("No authentication token found");
+      }
+
       const response = await api.post("/notes", {
         title: "Untitled Note",
         content: "",
       });
+
       const newNote = response.data.note;
 
       // If we're in a filtered view, fetch all notes
@@ -88,9 +121,17 @@ const NotesContent = () => {
       }
 
       setActiveNote(newNote);
+      // Clear any previous errors on successful create
+      setError(null);
     } catch (error) {
-      setError("Error creating note");
-      console.error(error);
+      setError(error.message || "Error creating note");
+      console.error("Create note error:", error);
+
+      // If the token is invalid, redirect to login
+      if (error.response && error.response.status === 401) {
+        localStorage.removeItem("token");
+        navigate("/login");
+      }
     } finally {
       setIsLoading(false);
     }

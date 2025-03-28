@@ -19,6 +19,7 @@ function Login() {
           password,
         }
       );
+      console.log("Login response:", response.data);
       localStorage.setItem("token", response.data.token);
       navigate("/notes");
     } catch (err) {
@@ -33,9 +34,7 @@ function Login() {
   return (
     <div className="auth-container">
       <h2>Welcome back to Byte-Notes</h2>
-      <p>
-        We are glad to have you. Please login below to access your notes.
-      </p>
+      <p>We are glad to have you. Please login below to access your notes.</p>
       <form onSubmit={handleLogin} className="auth-form">
         <input
           type="email"
@@ -54,8 +53,7 @@ function Login() {
         <button type="submit">Login</button>
         {error && <p>{error}</p>}
         <p>
-          If you do not have an account,{" "}
-          <Link to="/signup">Signup here</Link>
+          If you do not have an account, <Link to="/signup">Signup here</Link>
         </p>
       </form>
     </div>
