@@ -1,10 +1,19 @@
 import React, { useState } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { MoreHorizontal, FolderSymlink } from "lucide-react";
 import NoteActions from "./NoteActions";
 import "./notes.css";
 
-const NoteItem = ({ note, isActive, onSelect, onDelete }) => {
+const NoteItem = ({
+  note,
+  isActive,
+  onSelect,
+  onDelete,
+  onMove,
+  groups = [],
+  inGroup = false,
+}) => {
   const [showMenu, setShowMenu] = useState(false);
+  const [showMoveMenu, setShowMoveMenu] = useState(false);
 
   const truncateTitle = (title) => {
     const words = title.split(" ");
@@ -15,21 +24,62 @@ const NoteItem = ({ note, isActive, onSelect, onDelete }) => {
   };
 
   return (
-    <div className={`note-item ${isActive ? "active" : ""}`} onClick={onSelect}>
+    <div
+      className={`note-item ${isActive ? "active" : ""} ${
+        inGroup ? "in-group" : ""
+      }`}
+      onClick={onSelect}
+    >
       <div className="note-item-header">
         <h3 className="note-title" title={note.title}>
           {truncateTitle(note.title)}
         </h3>
-        <button
-          className="menu-button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowMenu(!showMenu);
-          }}
-        >
-          <MoreHorizontal size={16} />
-        </button>
+        <div className="note-actions-container">
+          {!inGroup && onMove && (
+            <button
+              className="move-button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMoveMenu(!showMoveMenu);
+                setShowMenu(false);
+              }}
+              title="Move to group"
+            >
+              <FolderSymlink size={16} />
+            </button>
+          )}
+          <button
+            className="menu-button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(!showMenu);
+              setShowMoveMenu(false);
+            }}
+          >
+            <MoreHorizontal size={16} />
+          </button>
+        </div>
       </div>
+
+      {showMoveMenu && (
+        <div className="move-menu">
+          <div className="move-menu-header">Move to:</div>
+          {groups.map((group) => (
+            <div
+              key={group._id}
+              className="move-menu-item"
+              onClick={(e) => {
+                e.stopPropagation();
+                onMove(group._id);
+                setShowMoveMenu(false);
+              }}
+            >
+              {group.name}
+            </div>
+          ))}
+        </div>
+      )}
+
       <NoteActions
         isVisible={showMenu}
         onDelete={onDelete}

@@ -26,6 +26,11 @@ const noteSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    groupId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Group",
+      default: null,
+    },
   },
   {
     timestamps: true,

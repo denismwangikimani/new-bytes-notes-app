@@ -6,6 +6,7 @@ const Note = require("./db/noteModel");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const auth = require("./auth");
+const Group = require("./db/groupModel");
 
 // initialize express app
 const app = express();
@@ -236,6 +237,99 @@ app.delete("/notes/:id", auth, async (req, res) => {
   } catch (error) {
     //Respond with error message if note is not deleted successfully
     res.status(500).json({ message: "Error deleting note", error });
+  }
+});
+
+// Get all groups for a user
+app.get("/groups", auth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const groups = await Group.find({ user: userId }).sort({ createdAt: -1 });
+    res.status(200).json({ groups });
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching groups", error });
+  }
+});
+
+// Create a new group
+app.post("/groups", auth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { name, color } = req.body;
+
+    const newGroup = new Group({
+      name,
+      color,
+      user: userId,
+    });
+
+    await newGroup.save();
+    res
+      .status(201)
+      .json({ message: "Group created successfully", group: newGroup });
+  } catch (error) {
+    res.status(500).json({ message: "Error creating group", error });
+  }
+});
+
+// Delete a group
+app.delete("/groups/:id", auth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const groupId = req.params.id;
+
+    // Delete the group
+    const deletedGroup = await Group.findOneAndDelete({
+      _id: groupId,
+      user: userId,
+    });
+    if (!deletedGroup) {
+      return res.status(404).json({ message: "Group not found" });
+    }
+
+    // Update all notes in this group to have no group
+    await Note.updateMany(
+      { groupId: groupId, user: userId },
+      { $set: { groupId: null } }
+    );
+
+    res.status(200).json({ message: "Group deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Error deleting group", error });
+  }
+});
+
+// Move a note to a group
+app.put("/notes/:id/move", auth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const noteId = req.params.id;
+    const { groupId } = req.body;
+
+    // Verify the group exists (if not null)
+    if (groupId) {
+      const group = await Group.findOne({ _id: groupId, user: userId });
+      if (!group) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+    }
+
+    // Update the note
+    const updatedNote = await Note.findOneAndUpdate(
+      { _id: noteId, user: userId },
+      { groupId: groupId },
+      { new: true }
+    );
+
+    if (!updatedNote) {
+      return res.status(404).json({ message: "Note not found" });
+    }
+
+    res
+      .status(200)
+      .json({ message: "Note moved successfully", note: updatedNote });
+  } catch (error) {
+    res.status(500).json({ message: "Error moving note", error });
   }
 });
 

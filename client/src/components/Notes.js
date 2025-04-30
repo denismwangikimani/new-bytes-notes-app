@@ -15,6 +15,7 @@ const NotesContent = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [lastQuery, setLastQuery] = useState({ type: "all", params: null });
   const { isSidebarOpen } = useSidebar();
+  const [groups, setGroups] = useState([]);
   const navigate = useNavigate();
 
   const API_BASE_URL = "https://new-bytes-notes-backend.onrender.com";
@@ -57,6 +58,89 @@ const NotesContent = () => {
   useEffect(() => {
     const token = localStorage.getItem("token");
     console.log("Current token:", token ? "exists" : "missing");
+  }, []);
+
+  // Add functions to fetch, create, delete groups and move notes
+  const fetchGroups = useCallback(async () => {
+    try {
+      const api = getApi();
+      if (!api) return;
+
+      const response = await api.get("/groups");
+      if (response.data.groups) {
+        setGroups(response.data.groups);
+      }
+    } catch (error) {
+      setError("Error fetching groups");
+      console.error("Fetch groups error:", error);
+    }
+  }, [getApi]);
+
+  // Create a new group
+  const handleCreateGroup = async (groupData) => {
+    try {
+      const api = getApi();
+      if (!api) return;
+
+      const response = await api.post("/groups", groupData);
+      const newGroup = response.data.group;
+
+      setGroups((prev) => [...prev, newGroup]);
+    } catch (error) {
+      setError("Error creating group");
+      console.error("Create group error:", error);
+    }
+  };
+
+  // Delete a group
+  const handleDeleteGroup = async (groupId) => {
+    try {
+      const api = getApi();
+      if (!api) return;
+
+      await api.delete(`/groups/${groupId}`);
+
+      // Remove group from list
+      setGroups((prev) => prev.filter((group) => group._id !== groupId));
+
+      // Update notes that were in this group to be ungrouped
+      setNotes((prev) =>
+        prev.map((note) =>
+          note.groupId === groupId ? { ...note, groupId: null } : note
+        )
+      );
+    } catch (error) {
+      setError("Error deleting group");
+      console.error("Delete group error:", error);
+    }
+  };
+
+  // Move a note to a group
+  const handleMoveNote = async (noteId, groupId) => {
+    try {
+      const api = getApi();
+      if (!api) return;
+
+      const response = await api.put(`/notes/${noteId}/move`, { groupId });
+      const updatedNote = response.data.note;
+
+      setNotes((prev) =>
+        prev.map((note) => (note._id === noteId ? updatedNote : note))
+      );
+
+      if (activeNote?._id === noteId) {
+        setActiveNote(updatedNote);
+      }
+    } catch (error) {
+      setError("Error moving note");
+      console.error("Move note error:", error);
+    }
+  };
+
+  // Fetch groups when component mounts
+  useEffect(() => {
+    fetchNotes();
+    fetchGroups();
   }, []);
 
   const sortNotes = (notesArray) => {
@@ -213,6 +297,10 @@ const NotesContent = () => {
         onSearch={handleSearch}
         onFilter={handleFilter}
         isLoading={isLoading}
+        groups={groups}
+        onCreateGroup={handleCreateGroup}
+        onDeleteGroup={handleDeleteGroup}
+        onMoveNote={handleMoveNote}
       />
       {activeNote ? (
         <NoteEditor
