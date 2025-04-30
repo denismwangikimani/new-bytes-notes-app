@@ -85,3 +85,65 @@ export const transformText = async (text, transformType) => {
     return "Error processing your request. Please try again.";
   }
 };
+
+export const generateFlashcards = async (noteContent) => {
+    if (!noteContent || !noteContent.trim()) {
+      console.error("Empty content provided for flashcard generation");
+      return { error: "No content provided for generating flashcards." };
+    }
+  
+    console.log("Generating flashcards for content length:", noteContent.length);
+    
+    // Prompt engineering for better flashcard generation
+    const prompt = `
+  Generate 5 multiple-choice quiz questions based on the following notes content. 
+  For each question:
+  1. Create a clear, specific question
+  2. Provide exactly 4 answer choices labeled A, B, C, and D
+  3. Indicate which answer is correct
+  4. Include a brief explanation of why the correct answer is right
+  
+  Format the output as a JSON array with this structure:
+  [
+    {
+      "question": "Question text here?",
+      "options": [
+        {"id": "A", "text": "First option"},
+        {"id": "B", "text": "Second option"},
+        {"id": "C", "text": "Third option"},
+        {"id": "D", "text": "Fourth option"}
+      ],
+      "correctAnswer": "B",
+      "explanation": "Explanation of why B is correct"
+    },
+    // more questions...
+  ]
+  
+  Here is the notes content:
+  ${noteContent.substring(0, 6000)}
+  `;
+  
+    try {
+      const response = await generateContent(prompt);
+      
+      // Extract the JSON part from the response
+      const jsonMatch = response.match(/\[\s*\{.*\}\s*\]/s);
+      
+      if (jsonMatch) {
+        try {
+          const flashcards = JSON.parse(jsonMatch[0]);
+          console.log("Generated flashcards:", flashcards.length);
+          return flashcards;
+        } catch (parseError) {
+          console.error("Error parsing flashcards JSON:", parseError);
+          return { error: "Generated flashcards were not in valid format." };
+        }
+      } else {
+        console.error("Could not extract JSON from response");
+        return { error: "Failed to generate flashcards in the correct format." };
+      }
+    } catch (error) {
+      console.error("Error generating flashcards:", error);
+      return { error: "Error generating flashcards. Please try again." };
+    }
+  };

@@ -6,6 +6,7 @@ import AIModal from "../AIModal";
 import TextSelectionToolbar from "../TextSelectionToolbar";
 import TextPreviewModal from "../TextPreviewModal";
 import { generateContent, transformText } from "../../services/geminiService";
+import FlashcardModal from "../FlashcardModal";
 import "./notes.css";
 
 const NoteEditor = ({ note, onUpdate, onCreate }) => {
@@ -14,7 +15,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [aiResponse, setAIResponse] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  
+
   // Text selection and transformation states
   const [selectionPosition, setSelectionPosition] = useState(null);
   const [selectedText, setSelectedText] = useState("");
@@ -23,7 +24,8 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [isTransformLoading, setIsTransformLoading] = useState(false);
   const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
   const [transformType, setTransformType] = useState("");
-  
+  const [isFlashcardModalOpen, setIsFlashcardModalOpen] = useState(false);
+
   const titleUpdateTimer = useRef(null);
   const contentRef = useRef(null);
   const { isSidebarOpen } = useSidebar();
@@ -102,9 +104,9 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           content.substring(0, cursorPosition) +
           response +
           content.substring(cursorPosition);
-        
+
         setContent(newContent);
-        
+
         setTimeout(() => {
           if (contentRef.current) {
             const newPosition = cursorPosition + response.length;
@@ -129,79 +131,91 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   // Text selection handler
   const handleTextSelection = () => {
     if (!contentRef.current) return;
-    
+
     const start = contentRef.current.selectionStart;
     const end = contentRef.current.selectionEnd;
-    
+
     // Clear selection toolbar if no text is selected
     if (start === end) {
       setSelectionPosition(null);
       return;
     }
-    
+
     const text = content.substring(start, end);
-    
+
     // Clear selection toolbar if selected text is empty
     if (!text.trim()) {
       setSelectionPosition(null);
       return;
     }
-    
+
     // Get position for the toolbar
     const textarea = contentRef.current;
     const rect = textarea.getBoundingClientRect();
-    
+
     // Calculate approximate position of cursor
     // This is a best-effort since textareas don't provide exact cursor positions
     setSelectionPosition({
       x: rect.left + rect.width / 2, // Center horizontally
       y: rect.top - 10, // Position above textarea
     });
-    
+
     // Save selected text and range
     setSelectedText(text);
     setSelectionRange({ start, end });
   };
 
-    // Handle transform option selection (Summarize, Explain, etc.)
-    const handleTransformOption = async (option) => {
-      // --- START DEBUG LOGS ---
-      console.log(`%c[DEBUG] handleTransformOption START - Option: ${option}`, 'color: blue; font-weight: bold;');
-      console.log(`[DEBUG] Current isPreviewModalOpen state: ${isPreviewModalOpen}`);
-      // --- END DEBUG LOGS ---
-  
-      // Hide the selection toolbar
-      setSelectionPosition(null);
-  
-      setTransformType(option);
-      setIsTransformLoading(true);
-  
-      // --- CRITICAL STATE UPDATE ---
+  // Handle transform option selection (Summarize, Explain, etc.)
+  const handleTransformOption = async (option) => {
+    // --- START DEBUG LOGS ---
+    console.log(
+      `%c[DEBUG] handleTransformOption START - Option: ${option}`,
+      "color: blue; font-weight: bold;"
+    );
+    console.log(
+      `[DEBUG] Current isPreviewModalOpen state: ${isPreviewModalOpen}`
+    );
+    // --- END DEBUG LOGS ---
+
+    // Hide the selection toolbar
+    setSelectionPosition(null);
+
+    setTransformType(option);
+    setIsTransformLoading(true);
+
+    // --- CRITICAL STATE UPDATE ---
+    setIsPreviewModalOpen(true);
+    console.log(
+      `%c[DEBUG] setIsPreviewModalOpen(true) CALLED!`,
+      "color: green; font-weight: bold;"
+    );
+    // --- END CRITICAL STATE UPDATE ---
+
+    // Use a slight delay to see if the state update registers before async call
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    console.log(
+      `[DEBUG] State after 50ms delay - isPreviewModalOpen: ${isPreviewModalOpen}`
+    ); // Check state shortly after setting
+
+    try {
+      console.log("[DEBUG] Calling transformText API...");
+      const transformedContent = await transformText(selectedText, option);
+      console.log("[DEBUG] transformText API returned.");
+      setTransformedText(transformedContent);
+    } catch (error) {
+      console.error("[DEBUG] Error transforming text:", error);
+      setTransformedText("Error transforming text. Please try again.");
+      // Ensure modal stays open even on error
       setIsPreviewModalOpen(true);
-      console.log(`%c[DEBUG] setIsPreviewModalOpen(true) CALLED!`, 'color: green; font-weight: bold;');
-      // --- END CRITICAL STATE UPDATE ---
-  
-      // Use a slight delay to see if the state update registers before async call
-      await new Promise(resolve => setTimeout(resolve, 50)); 
-      console.log(`[DEBUG] State after 50ms delay - isPreviewModalOpen: ${isPreviewModalOpen}`); // Check state shortly after setting
-  
-      try {
-        console.log("[DEBUG] Calling transformText API...");
-        const transformedContent = await transformText(selectedText, option);
-        console.log("[DEBUG] transformText API returned.");
-        setTransformedText(transformedContent);
-      } catch (error) {
-        console.error("[DEBUG] Error transforming text:", error);
-        setTransformedText("Error transforming text. Please try again.");
-        // Ensure modal stays open even on error
-        setIsPreviewModalOpen(true); 
-      } finally {
-        setIsTransformLoading(false);
-        console.log("[DEBUG] handleTransformOption FINALLY block.");
-        // Let's double-check the state here too
-        console.log(`[DEBUG] Final state check - isPreviewModalOpen: ${isPreviewModalOpen}`); 
-      }
-    };
+    } finally {
+      setIsTransformLoading(false);
+      console.log("[DEBUG] handleTransformOption FINALLY block.");
+      // Let's double-check the state here too
+      console.log(
+        `[DEBUG] Final state check - isPreviewModalOpen: ${isPreviewModalOpen}`
+      );
+    }
+  };
 
   // Accept the transformed text
   const handleAcceptTransform = () => {
@@ -210,10 +224,10 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       content.substring(0, selectionRange.start) +
       transformedText +
       content.substring(selectionRange.end);
-    
+
     setContent(newContent);
     setIsPreviewModalOpen(false);
-    
+
     // Reset cursor position
     setTimeout(() => {
       if (contentRef.current) {
@@ -233,11 +247,15 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   // Close the selection toolbar when clicking outside
   useEffect(() => {
     const handleClickOutside = (e) => {
-      if (selectionPosition && contentRef.current && !contentRef.current.contains(e.target)) {
+      if (
+        selectionPosition &&
+        contentRef.current &&
+        !contentRef.current.contains(e.target)
+      ) {
         setSelectionPosition(null);
       }
     };
-    
+
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
@@ -247,12 +265,26 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   // Get the title for the transformation preview
   const getTransformTitle = () => {
     switch (transformType) {
-      case "summarize": return "Summarized Text";
-      case "explain": return "Explanation";
-      case "shorten": return "Shortened Text";
-      case "expand": return "Expanded Text";
-      default: return "Preview";
+      case "summarize":
+        return "Summarized Text";
+      case "explain":
+        return "Explanation";
+      case "shorten":
+        return "Shortened Text";
+      case "expand":
+        return "Expanded Text";
+      default:
+        return "Preview";
     }
+  };
+
+  // AI Assistant handlers
+  const handleActivateText = () => {
+    setIsAIModalOpen(true);
+  };
+
+  const handleActivateRevision = () => {
+    setIsFlashcardModalOpen(true);
   };
 
   return (
@@ -275,9 +307,12 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           placeholder="Start typing your note..."
         />
       </div>
-      
+
       {/* AI Assistant */}
-      <AIAssistant onActivate={() => setIsAIModalOpen(true)} />
+      <AIAssistant
+        onActivateText={handleActivateText}
+        onActivateRevision={handleActivateRevision}
+      />
       <AIModal
         isOpen={isAIModalOpen}
         onClose={() => {
@@ -288,13 +323,20 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         loading={isLoading}
         response={aiResponse}
       />
-      
+
+      {/* Flashcard Modal */}
+      <FlashcardModal 
+        isOpen={isFlashcardModalOpen}
+        onClose={() => setIsFlashcardModalOpen(false)}
+        noteContent={content}
+      />
+
       {/* Text selection toolbar */}
       <TextSelectionToolbar
         position={selectionPosition}
         onOption={handleTransformOption}
       />
-      
+
       {/* Text preview modal */}
       <TextPreviewModal
         isOpen={isPreviewModalOpen}

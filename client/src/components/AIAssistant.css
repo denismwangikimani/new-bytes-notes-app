@@ -132,3 +132,169 @@
     transform: scale(1);
   }
 }
+
+/* AI Assistant Menu */
+.ai-assistant-menu {
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    background-color: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+    z-index: 1000;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+  
+  .ai-assistant-menu.hidden {
+    transform: translateY(10px);
+    opacity: 0;
+    pointer-events: none;
+  }
+  
+  .ai-assistant-menu button {
+    display: block;
+    width: 100%;
+    padding: 12px 20px;
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+  
+  .ai-assistant-menu button:hover {
+    background-color: #f5f5f5;
+  }
+  
+  .ai-assistant-menu button:not(:last-child) {
+    border-bottom: 1px solid #eee;
+  }
+  
+  .ai-assistant-menu button i {
+    margin-right: 8px;
+    width: 18px;
+  }
+  
+  /* Flashcard Modal Styles */
+  .flashcard-modal {
+    max-width: 600px;
+    width: 90%;
+  }
+  
+  .flashcard-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .flashcard-progress {
+    color: #666;
+    font-size: 14px;
+  }
+  
+  .flashcard-question {
+    font-size: 18px;
+    font-weight: 500;
+    margin-bottom: 8px;
+    line-height: 1.4;
+  }
+  
+  .flashcard-options {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .flashcard-option {
+    text-align: left;
+    padding: 12px 15px;
+    border-radius: 8px;
+    background-color: #f7f7f7;
+    border: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 15px;
+  }
+  
+  .flashcard-option:hover:not(:disabled) {
+    background-color: #eee;
+  }
+  
+  .flashcard-option.correct {
+    background-color: #dcffe4;
+    border-color: #16a34a;
+  }
+  
+  .flashcard-option.incorrect {
+    background-color: #ffeded;
+    border-color: #dc2626;
+  }
+  
+  .flashcard-option:disabled {
+    cursor: default;
+  }
+  
+  .option-label {
+    font-weight: bold;
+    margin-right: 5px;
+  }
+  
+  .flashcard-explanation {
+    background-color: #f9f9f9;
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 10px;
+    border-left: 4px solid #666;
+  }
+  
+  .explanation-header {
+    font-weight: bold;
+    margin-bottom: 8px;
+  }
+  
+  .correct-text {
+    color: #16a34a;
+  }
+  
+  .incorrect-text {
+    color: #dc2626;
+  }
+  
+  .flashcard-navigation {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 20px;
+  }
+  
+  .nav-button {
+    padding: 8px 16px;
+    border: 1px solid #ddd;
+    background-color: #f5f5f5;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  
+  .nav-button.primary {
+    background-color: #111827;
+    color: white;
+    border-color: #111827;
+  }
+  
+  .nav-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  .flashcard-empty {
+    text-align: center;
+    padding: 20px;
+  }
+  
+  .flashcard-error {
+    color: #dc2626;
+    padding: 15px;
+    text-align: center;
+    background-color: #ffeded;
+    border-radius: 6px;
+  }
