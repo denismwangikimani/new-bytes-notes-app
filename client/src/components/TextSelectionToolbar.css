@@ -1,0 +1,131 @@
+.text-selection-toolbar {
+  position: fixed;
+  background-color: #2e2e2e;
+  border-radius: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  display: flex;
+  padding: 4px;
+  z-index: 2000;
+  user-select: none;
+}
+
+.text-selection-toolbar button {
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  padding: 4px 8px;
+  margin: 0 2px;
+  font-size: 14px;
+  border-radius: 4px;
+}
+
+.text-selection-toolbar button:hover {
+  background-color: #3e3e3e;
+}
+
+/* Preview container for accept/reject action */
+.text-preview-container {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 2001;
+  width: 80%;
+  max-width: 600px;
+}
+
+.text-preview-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 2000;
+}
+
+.text-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.text-preview-title {
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.text-preview-content {
+  padding: 16px;
+  background-color: #f9f9f9;
+  border-radius: 4px;
+  margin-bottom: 16px;
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #eee;
+}
+
+.text-preview-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.text-preview-actions button {
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: none;
+}
+
+.text-preview-accept {
+  background-color: #16a34a;
+  color: white;
+}
+
+.text-preview-reject {
+  background-color: #dc2626;
+  color: white;
+}
+
+.text-preview-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 0;
+}
+
+.text-preview-dot {
+  width: 8px;
+  height: 8px;
+  background-color: #666;
+  border-radius: 50%;
+  margin: 0 4px;
+  animation: preview-loading 1.4s infinite ease-in-out both;
+}
+
+.text-preview-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.text-preview-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes preview-loading {
+  0%,
+  80%,
+  100% {
+    transform: scale(0);
+  }
+  40% {
+    transform: scale(1);
+  }
+}

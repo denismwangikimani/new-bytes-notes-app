@@ -3,7 +3,9 @@ import EditorHeader from "./EditorHeader";
 import { useSidebar } from "./SidebarContext";
 import AIAssistant from "../AIAssistant";
 import AIModal from "../AIModal";
-import { generateContent } from "../../services/geminiService";
+import TextSelectionToolbar from "../TextSelectionToolbar";
+import TextPreviewModal from "../TextPreviewModal";
+import { generateContent, transformText } from "../../services/geminiService";
 import "./notes.css";
 
 const NoteEditor = ({ note, onUpdate, onCreate }) => {
@@ -12,6 +14,16 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [aiResponse, setAIResponse] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Text selection and transformation states
+  const [selectionPosition, setSelectionPosition] = useState(null);
+  const [selectedText, setSelectedText] = useState("");
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [transformedText, setTransformedText] = useState("");
+  const [isTransformLoading, setIsTransformLoading] = useState(false);
+  const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
+  const [transformType, setTransformType] = useState("");
+  
   const titleUpdateTimer = useRef(null);
   const contentRef = useRef(null);
   const { isSidebarOpen } = useSidebar();
@@ -31,12 +43,13 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     return () => clearTimeout(timer);
   }, [content, title, note, onUpdate]);
 
-  const handleContentChange = (newContent) => {
+  // Content change handler
+  const handleContentChange = (e) => {
+    const newContent = e.target.value;
     setContent(newContent);
 
-    // Only update title if it's currently "Untitled Note" or empty
+    // Auto-title generation logic
     if (title === "Untitled Note" || title === "") {
-      // Find the first sentence by looking for period, question mark, or exclamation mark
       const sentenceEnd = Math.min(
         ...[
           newContent.indexOf(". "),
@@ -47,16 +60,12 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
       let firstSentence;
       if (sentenceEnd === Infinity) {
-        // If no sentence ending is found, use all the content
         firstSentence = newContent;
       } else {
-        // Include the punctuation mark in the sentence
         firstSentence = newContent.slice(0, sentenceEnd + 1);
       }
 
-      // Only update title if we have actual content
       if (firstSentence.trim()) {
-        // Use a timer to update the title incrementally
         clearTimeout(titleUpdateTimer.current);
         titleUpdateTimer.current = setTimeout(() => {
           setTitle(firstSentence.trim());
@@ -65,10 +74,9 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     }
   };
 
-  // Handle keyboard shortcut for AI assistant
+  // AI Assistant keyboard shortcut
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Check if Ctrl+/ is pressed
       if (e.ctrlKey && e.key === "/") {
         e.preventDefault();
         setIsAIModalOpen(true);
@@ -81,24 +89,22 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     };
   }, []);
 
+  // Handle AI prompt submission
   const handleAISubmit = async (prompt) => {
     setIsLoading(true);
     try {
       const response = await generateContent(prompt);
       setAIResponse(response);
-      
-      // Insert the AI-generated content at the cursor position or at the end
+
       if (contentRef.current) {
         const cursorPosition = contentRef.current.selectionStart;
-        const currentContent = content;
-        const newContent = 
-          currentContent.substring(0, cursorPosition) + 
-          response + 
-          currentContent.substring(cursorPosition);
+        const newContent =
+          content.substring(0, cursorPosition) +
+          response +
+          content.substring(cursorPosition);
         
         setContent(newContent);
         
-        // After state update, set cursor to end of inserted content
         setTimeout(() => {
           if (contentRef.current) {
             const newPosition = cursorPosition + response.length;
@@ -108,17 +114,144 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           }
         }, 0);
       }
-      
-      // Close modal after a short delay
+
       setTimeout(() => {
         setIsAIModalOpen(false);
         setAIResponse("");
       }, 1500);
-      
     } catch (error) {
       setAIResponse("Error: Failed to generate content.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Text selection handler
+  const handleTextSelection = () => {
+    if (!contentRef.current) return;
+    
+    const start = contentRef.current.selectionStart;
+    const end = contentRef.current.selectionEnd;
+    
+    // Clear selection toolbar if no text is selected
+    if (start === end) {
+      setSelectionPosition(null);
+      return;
+    }
+    
+    const text = content.substring(start, end);
+    
+    // Clear selection toolbar if selected text is empty
+    if (!text.trim()) {
+      setSelectionPosition(null);
+      return;
+    }
+    
+    // Get position for the toolbar
+    const textarea = contentRef.current;
+    const rect = textarea.getBoundingClientRect();
+    
+    // Calculate approximate position of cursor
+    // This is a best-effort since textareas don't provide exact cursor positions
+    setSelectionPosition({
+      x: rect.left + rect.width / 2, // Center horizontally
+      y: rect.top - 10, // Position above textarea
+    });
+    
+    // Save selected text and range
+    setSelectedText(text);
+    setSelectionRange({ start, end });
+  };
+
+    // Handle transform option selection (Summarize, Explain, etc.)
+    const handleTransformOption = async (option) => {
+      // --- START DEBUG LOGS ---
+      console.log(`%c[DEBUG] handleTransformOption START - Option: ${option}`, 'color: blue; font-weight: bold;');
+      console.log(`[DEBUG] Current isPreviewModalOpen state: ${isPreviewModalOpen}`);
+      // --- END DEBUG LOGS ---
+  
+      // Hide the selection toolbar
+      setSelectionPosition(null);
+  
+      setTransformType(option);
+      setIsTransformLoading(true);
+  
+      // --- CRITICAL STATE UPDATE ---
+      setIsPreviewModalOpen(true);
+      console.log(`%c[DEBUG] setIsPreviewModalOpen(true) CALLED!`, 'color: green; font-weight: bold;');
+      // --- END CRITICAL STATE UPDATE ---
+  
+      // Use a slight delay to see if the state update registers before async call
+      await new Promise(resolve => setTimeout(resolve, 50)); 
+      console.log(`[DEBUG] State after 50ms delay - isPreviewModalOpen: ${isPreviewModalOpen}`); // Check state shortly after setting
+  
+      try {
+        console.log("[DEBUG] Calling transformText API...");
+        const transformedContent = await transformText(selectedText, option);
+        console.log("[DEBUG] transformText API returned.");
+        setTransformedText(transformedContent);
+      } catch (error) {
+        console.error("[DEBUG] Error transforming text:", error);
+        setTransformedText("Error transforming text. Please try again.");
+        // Ensure modal stays open even on error
+        setIsPreviewModalOpen(true); 
+      } finally {
+        setIsTransformLoading(false);
+        console.log("[DEBUG] handleTransformOption FINALLY block.");
+        // Let's double-check the state here too
+        console.log(`[DEBUG] Final state check - isPreviewModalOpen: ${isPreviewModalOpen}`); 
+      }
+    };
+
+  // Accept the transformed text
+  const handleAcceptTransform = () => {
+    // Replace the selected text with the transformed text
+    const newContent =
+      content.substring(0, selectionRange.start) +
+      transformedText +
+      content.substring(selectionRange.end);
+    
+    setContent(newContent);
+    setIsPreviewModalOpen(false);
+    
+    // Reset cursor position
+    setTimeout(() => {
+      if (contentRef.current) {
+        const newPosition = selectionRange.start + transformedText.length;
+        contentRef.current.selectionStart = newPosition;
+        contentRef.current.selectionEnd = newPosition;
+        contentRef.current.focus();
+      }
+    }, 0);
+  };
+
+  // Reject the transformed text
+  const handleRejectTransform = () => {
+    setIsPreviewModalOpen(false);
+  };
+
+  // Close the selection toolbar when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (selectionPosition && contentRef.current && !contentRef.current.contains(e.target)) {
+        setSelectionPosition(null);
+      }
+    };
+    
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [selectionPosition]);
+
+  // Get the title for the transformation preview
+  const getTransformTitle = () => {
+    switch (transformType) {
+      case "summarize": return "Summarized Text";
+      case "explain": return "Explanation";
+      case "shorten": return "Shortened Text";
+      case "expand": return "Expanded Text";
+      default: return "Preview";
     }
   };
 
@@ -136,7 +269,8 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         <textarea
           ref={contentRef}
           value={content}
-          onChange={(e) => handleContentChange(e.target.value)}
+          onChange={handleContentChange}
+          onSelect={handleTextSelection}
           className="editor-content"
           placeholder="Start typing your note..."
         />
@@ -153,6 +287,23 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         onSubmit={handleAISubmit}
         loading={isLoading}
         response={aiResponse}
+      />
+      
+      {/* Text selection toolbar */}
+      <TextSelectionToolbar
+        position={selectionPosition}
+        onOption={handleTransformOption}
+      />
+      
+      {/* Text preview modal */}
+      <TextPreviewModal
+        isOpen={isPreviewModalOpen}
+        onClose={handleRejectTransform}
+        content={transformedText}
+        onAccept={handleAcceptTransform}
+        onReject={handleRejectTransform}
+        loading={isTransformLoading}
+        title={getTransformTitle()}
       />
     </div>
   );
