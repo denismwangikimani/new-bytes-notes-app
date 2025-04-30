@@ -1,12 +1,19 @@
 import React, { useState, useEffect, useRef } from "react";
 import EditorHeader from "./EditorHeader";
 import { useSidebar } from "./SidebarContext";
+import AIAssistant from "../AIAssistant";
+import AIModal from "../AIModal";
+import { generateContent } from "../../services/geminiService";
 import "./notes.css";
 
 const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [content, setContent] = useState(note?.content || "");
   const [title, setTitle] = useState(note?.title || "");
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
+  const [aiResponse, setAIResponse] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const titleUpdateTimer = useRef(null);
+  const contentRef = useRef(null);
   const { isSidebarOpen } = useSidebar();
 
   useEffect(() => {
@@ -58,6 +65,63 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     }
   };
 
+  // Handle keyboard shortcut for AI assistant
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Check if Ctrl+/ is pressed
+      if (e.ctrlKey && e.key === "/") {
+        e.preventDefault();
+        setIsAIModalOpen(true);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  const handleAISubmit = async (prompt) => {
+    setIsLoading(true);
+    try {
+      const response = await generateContent(prompt);
+      setAIResponse(response);
+      
+      // Insert the AI-generated content at the cursor position or at the end
+      if (contentRef.current) {
+        const cursorPosition = contentRef.current.selectionStart;
+        const currentContent = content;
+        const newContent = 
+          currentContent.substring(0, cursorPosition) + 
+          response + 
+          currentContent.substring(cursorPosition);
+        
+        setContent(newContent);
+        
+        // After state update, set cursor to end of inserted content
+        setTimeout(() => {
+          if (contentRef.current) {
+            const newPosition = cursorPosition + response.length;
+            contentRef.current.selectionStart = newPosition;
+            contentRef.current.selectionEnd = newPosition;
+            contentRef.current.focus();
+          }
+        }, 0);
+      }
+      
+      // Close modal after a short delay
+      setTimeout(() => {
+        setIsAIModalOpen(false);
+        setAIResponse("");
+      }, 1500);
+      
+    } catch (error) {
+      setAIResponse("Error: Failed to generate content.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className={`editor-container ${!isSidebarOpen ? "full-width" : ""}`}>
       <EditorHeader onCreate={onCreate} />
@@ -70,12 +134,26 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           placeholder="Note title..."
         />
         <textarea
+          ref={contentRef}
           value={content}
           onChange={(e) => handleContentChange(e.target.value)}
           className="editor-content"
           placeholder="Start typing your note..."
         />
       </div>
+      
+      {/* AI Assistant */}
+      <AIAssistant onActivate={() => setIsAIModalOpen(true)} />
+      <AIModal
+        isOpen={isAIModalOpen}
+        onClose={() => {
+          setIsAIModalOpen(false);
+          setAIResponse("");
+        }}
+        onSubmit={handleAISubmit}
+        loading={isLoading}
+        response={aiResponse}
+      />
     </div>
   );
 };
