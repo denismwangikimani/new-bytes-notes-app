@@ -3,6 +3,7 @@ import EditorHeader from "./EditorHeader";
 import { useSidebar } from "./SidebarContext";
 import AIAssistant from "../AIAssistant";
 import AIModal from "../AIModal";
+import AskAIModal from "../AskAIModal";
 import TextSelectionToolbar from "../TextSelectionToolbar";
 import TextPreviewModal from "../TextPreviewModal";
 import { generateContent, transformText } from "../../services/geminiService";
@@ -25,6 +26,11 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
   const [transformType, setTransformType] = useState("");
   const [isFlashcardModalOpen, setIsFlashcardModalOpen] = useState(false);
+
+  //ask ai states
+  const [isAskAIModalOpen, setIsAskAIModalOpen] = useState(false);
+  const [askAIResponse, setAskAIResponse] = useState("");
+  const [isAskAILoading, setIsAskAILoading] = useState(false);
 
   const titleUpdateTimer = useRef(null);
   const contentRef = useRef(null);
@@ -165,9 +171,20 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     setSelectionRange({ start, end });
   };
 
-  // Handle transform option selection (Summarize, Explain, etc.)
+  // Modify your handleTransformOption function to handle the new option
   const handleTransformOption = async (option) => {
-    // --- START DEBUG LOGS ---
+    console.log(
+      `%c[NoteEditor DEBUG] Transform option selected: ${option}`,
+      "color: blue;"
+    );
+
+    if (option === "askAI") {
+      // Open the Ask AI modal
+      setIsAskAIModalOpen(true);
+      return;
+    }
+
+    // Existing code for other options
     console.log(
       `%c[DEBUG] handleTransformOption START - Option: ${option}`,
       "color: blue; font-weight: bold;"
@@ -175,7 +192,6 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     console.log(
       `[DEBUG] Current isPreviewModalOpen state: ${isPreviewModalOpen}`
     );
-    // --- END DEBUG LOGS ---
 
     // Hide the selection toolbar
     setSelectionPosition(null);
@@ -183,19 +199,16 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     setTransformType(option);
     setIsTransformLoading(true);
 
-    // --- CRITICAL STATE UPDATE ---
     setIsPreviewModalOpen(true);
     console.log(
       `%c[DEBUG] setIsPreviewModalOpen(true) CALLED!`,
       "color: green; font-weight: bold;"
     );
-    // --- END CRITICAL STATE UPDATE ---
 
-    // Use a slight delay to see if the state update registers before async call
     await new Promise((resolve) => setTimeout(resolve, 50));
     console.log(
       `[DEBUG] State after 50ms delay - isPreviewModalOpen: ${isPreviewModalOpen}`
-    ); // Check state shortly after setting
+    );
 
     try {
       console.log("[DEBUG] Calling transformText API...");
@@ -205,15 +218,39 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     } catch (error) {
       console.error("[DEBUG] Error transforming text:", error);
       setTransformedText("Error transforming text. Please try again.");
-      // Ensure modal stays open even on error
       setIsPreviewModalOpen(true);
     } finally {
       setIsTransformLoading(false);
       console.log("[DEBUG] handleTransformOption FINALLY block.");
-      // Let's double-check the state here too
       console.log(
         `[DEBUG] Final state check - isPreviewModalOpen: ${isPreviewModalOpen}`
       );
+    }
+  };
+
+  //  new handler for the Ask AI feature
+  const handleAskAISubmit = async (question, context) => {
+    if (!question.trim() || !context.trim()) return;
+
+    setIsAskAILoading(true);
+    setAskAIResponse("");
+
+    try {
+      // Use your existing geminiService but with a different prompt format
+      const prompt = `I have the following text:
+"${context}"
+
+My question about this text is: ${question}
+
+Please provide a clear, helpful answer based only on the information in the text.`;
+
+      const response = await generateContent(prompt);
+      setAskAIResponse(response);
+    } catch (error) {
+      console.error("Error in Ask AI:", error);
+      setAskAIResponse("Sorry, there was an error processing your question.");
+    } finally {
+      setIsAskAILoading(false);
     }
   };
 
@@ -325,7 +362,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       />
 
       {/* Flashcard Modal */}
-      <FlashcardModal 
+      <FlashcardModal
         isOpen={isFlashcardModalOpen}
         onClose={() => setIsFlashcardModalOpen(false)}
         noteContent={content}
@@ -346,6 +383,19 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         onReject={handleRejectTransform}
         loading={isTransformLoading}
         title={getTransformTitle()}
+      />
+
+      {/* Ask AI modal */}
+      <AskAIModal
+        isOpen={isAskAIModalOpen}
+        onClose={() => {
+          setIsAskAIModalOpen(false);
+          setAskAIResponse("");
+        }}
+        selectedText={selectedText}
+        onSubmit={handleAskAISubmit}
+        loading={isAskAILoading}
+        response={askAIResponse}
       />
     </div>
   );

@@ -24,6 +24,16 @@
   background-color: #3e3e3e;
 }
 
+.text-selection-toolbar .ai-button {
+  background-color: #4a4a9c;
+  color: white;
+  font-weight: 500;
+}
+
+.text-selection-toolbar .ai-button:hover {
+  background-color: #5a5aac;
+}
+
 /* Preview container for accept/reject action */
 .text-preview-container {
   position: fixed;
@@ -128,4 +138,84 @@
   40% {
     transform: scale(1);
   }
+}
+
+/* Ask AI modal specific styles */
+.ask-ai-modal {
+  max-width: 700px;
+}
+
+.selected-text-container {
+  margin-bottom: 16px;
+  border-left: 3px solid #4a4a9c;
+  padding-left: 12px;
+}
+
+.selected-text-label {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.selected-text-content {
+  background-color: #f5f5f5;
+  padding: 10px;
+  border-radius: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+  font-size: 14px;
+  color: #333;
+}
+
+.ask-ai-input-container {
+  margin-bottom: 16px;
+}
+
+.ask-ai-input-container label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.ask-ai-input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.ask-ai-submit {
+  background-color: #4a4a9c;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.ask-ai-submit:disabled {
+  background-color: #a0a0a0;
+  cursor: not-allowed;
+}
+
+.ask-ai-response {
+  margin-top: 16px;
+  background-color: #f9f9f9;
+  padding: 16px;
+  border-radius: 4px;
+  border-left: 3px solid #16a34a;
+}
+
+.response-label {
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: #16a34a;
+}
+
+.response-content {
+  white-space: pre-wrap;
+  line-height: 1.5;
 }
