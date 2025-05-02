@@ -9,6 +9,10 @@ const jwt = require("jsonwebtoken");
 const auth = require("./auth");
 const Group = require("./db/groupModel");
 const File = require("./db/fileModel");
+const textToSpeech = require("@google-cloud/text-to-speech");
+const { v4: uuidv4 } = require("uuid");
+const path = require("path");
+const fs = require("fs");
 
 // initialize express app
 const app = express();
@@ -111,6 +115,12 @@ app.post("/login", async (req, res) => {
 // app.get("/notes", auth, (req, res) => {
 //   res.json({ message: "Here are your notes..." });
 // });
+
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 //get all notes saved by the user
 //get all notes saved by the user
@@ -423,11 +433,9 @@ app.delete("/api/files/:id", auth, async (req, res) => {
     const file = await File.findOne({ _id: fileId, user: userId });
 
     if (!file) {
-      return res
-        .status(404)
-        .json({
-          message: "File not found or you don't have permission to delete it",
-        });
+      return res.status(404).json({
+        message: "File not found or you don't have permission to delete it",
+      });
     }
 
     // Delete the file
@@ -437,6 +445,55 @@ app.delete("/api/files/:id", auth, async (req, res) => {
   } catch (error) {
     console.error("Error deleting file:", error);
     res.status(500).json({ message: "Error deleting file", error });
+  }
+});
+
+// Text-to-speech endpoint
+app.post("/api/text-to-speech", auth, async (req, res) => {
+  try {
+    const { text } = req.body;
+    
+    if (!text || text.length === 0) {
+      return res.status(400).json({ message: "Text is required" });
+    }
+    
+    // Initialize the Text-to-Speech client
+    const client = new textToSpeech.TextToSpeechClient({
+      keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
+    });
+    
+    // Perform the text-to-speech request
+    const [response] = await client.synthesizeSpeech({
+      input: { text: text },
+      voice: { languageCode: 'en-US', ssmlGender: 'NEUTRAL' },
+      audioConfig: { audioEncoding: 'MP3' },
+    });
+    
+    // Generate a unique filename
+    const fileName = `tts-${uuidv4()}.mp3`;
+    const filePath = path.join(uploadsDir, fileName);
+    
+    // Write the audio content to file
+    fs.writeFileSync(filePath, response.audioContent, 'binary');
+    
+    // Create a new file record in the database
+    const newFile = new File({
+      user: req.user.userId,
+      filename: fileName,
+      contentType: 'audio/mpeg',
+      size: response.audioContent.length,
+      data: response.audioContent,
+    });
+    
+    await newFile.save();
+    
+    // Return the file URL
+    const audioUrl = `/api/files/${newFile._id}`;
+    res.status(200).json({ audioUrl, message: "Audio generated successfully" });
+    
+  } catch (error) {
+    console.error("Error generating speech:", error);
+    res.status(500).json({ message: "Error generating speech", error });
   }
 });
 
