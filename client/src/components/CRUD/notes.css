@@ -634,8 +634,17 @@ button:disabled {
 
 /* Media container styles */
 .media-container {
-  margin: 10px 0;
+  margin: 20px 0;
   max-width: 100%;
+  display: block;
+  position: relative;
+  clear: both;
+}
+
+.media-container[contenteditable="false"] {
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: auto; /* Allow interaction with controls */
 }
 
 .image-container img {
@@ -647,6 +656,7 @@ button:disabled {
 .video-container video {
   max-width: 100%;
   border-radius: 4px;
+  pointer-events: auto;
 }
 
 .file-container {
@@ -654,6 +664,7 @@ button:disabled {
   border-radius: 4px;
   padding: 12px;
   background-color: #f9fafb;
+  margin: 15px 0;
 }
 
 .file-preview {
@@ -664,17 +675,20 @@ button:disabled {
 .file-preview svg {
   margin-right: 12px;
   color: #6b7280;
+  flex-shrink: 0;
 }
 
 .file-info {
   display: flex;
   flex-direction: column;
+  flex-grow: 1;
 }
 
 .file-name {
   font-weight: 500;
   color: #111827;
   text-decoration: none;
+  cursor: pointer;
 }
 
 .file-name:hover {
@@ -685,4 +699,84 @@ button:disabled {
   font-size: 12px;
   color: #6b7280;
   margin-top: 2px;
+}
+
+.view-file-button {
+  margin-top: 5px;
+  padding: 3px 8px;
+  background-color: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.view-file-button:hover {
+  background-color: #e5e7eb;
+}
+
+/* File sidebar viewer styles */
+.file-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 50%;
+  height: 100vh;
+  background-color: white;
+  z-index: 1000;
+  box-shadow: -2px 0 10px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.3s ease;
+}
+
+.file-sidebar.open {
+  transform: translateX(0);
+}
+
+.file-sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.file-sidebar-title {
+  font-size: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80%;
+}
+
+.file-sidebar-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 4px;
+}
+
+.file-sidebar-content {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+}
+
+.file-sidebar-content iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+/* Additional styles to ensure proper spacing */
+.rich-editor p {
+  margin: 0.5em 0;
+}
+
+.rich-editor .media-container + p {
+  margin-top: 1em;
 }

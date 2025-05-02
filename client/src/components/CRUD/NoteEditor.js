@@ -10,6 +10,9 @@ import TextPreviewModal from "../TextPreviewModal";
 import EditorToolbar from "../EditorToolbar";
 import { generateContent, transformText } from "../../services/geminiService";
 import FlashcardModal from "../FlashcardModal";
+import FileSidebar from "./FileSidebar";
+import MediaContextMenu from "../MediaContextMenu";
+import MediaDialog from "../MediaDialog";
 import "./notes.css";
 
 const NoteEditor = ({ note, onUpdate, onCreate }) => {
@@ -51,6 +54,43 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   //const titleUpdateTimer = useRef(null);
   const richEditorRef = useRef(null);
   const { isSidebarOpen } = useSidebar();
+
+  //file sidebar states
+  const [fileSidebar, setFileSidebar] = useState({
+    isOpen: false,
+    fileUrl: "",
+    fileName: "",
+  });
+
+  //media dialog states
+  const [contextMenu, setContextMenu] = useState({
+    show: false,
+    x: 0,
+    y: 0,
+    mediaType: null,
+    mediaElement: null,
+    fileId: null,
+  });
+
+  //state vars for media replacement
+  const [mediaType, setMediaType] = useState(null);
+  const [mediaElement, setMediaElement] = useState(null);
+  const [isReplacing, setIsReplacing] = useState(false);
+  const [showMediaDialog, setShowMediaDialog] = useState(false);
+
+  //purifyConfig states
+  const purifyConfig = {
+    ADD_ATTR: [
+      "target",
+      "contenteditable",
+      "data-file-url",
+      "data-filename",
+      "data-file-id",
+    ],
+    ADD_TAGS: ["iframe"],
+  };
+
+  const API_BASE_URL = "https://new-bytes-notes-backend.onrender.com";
 
   useEffect(() => {
     if (note) {
@@ -448,91 +488,184 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const handleMediaInsertion = (type, data) => {
     if (!richEditorRef.current) return;
 
-    // For links, insert at cursor position
+    // For links, insert at cursor position (keep this behavior)
     if (type === "link") {
       const linkText = window.getSelection().toString() || data.url;
       const linkHtml = `<a href="${data.url}" target="_blank">${linkText}</a>`;
       document.execCommand("insertHTML", false, linkHtml);
     }
-    // For other media types, insert on a new line
+    // Handling a replacement
+    else if (isReplacing && mediaElement) {
+      // Extract fileId from the URL
+      const fileId = data.url.split("/").pop();
+
+      // Create new HTML based on media type
+      let newHtml = "";
+      switch (type) {
+        case "image":
+          newHtml = `<div class="media-container image-container" contenteditable="false" data-file-id="${fileId}"><img src="${data.url}" alt="User uploaded image" style="max-width: 100%;" /></div>`;
+          break;
+        case "video":
+          newHtml = `<div class="media-container video-container" contenteditable="false" data-file-id="${fileId}"><video controls src="${data.url}" style="max-width: 100%;"></video></div>`;
+          break;
+        case "file":
+          newHtml = `
+          <div class="media-container file-container" contenteditable="false" data-file-url="${
+            data.url
+          }" data-filename="${data.filename}" data-file-id="${fileId}">
+            <div class="file-preview">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <div class="file-info">
+                <span class="file-name" data-file-url="${data.url}">${
+            data.filename
+          }</span>
+                <span class="file-size">${formatFileSize(data.size)}</span>
+                <button class="view-file-button" data-file-url="${
+                  data.url
+                }" data-filename="${data.filename}" type="button">View</button>
+              </div>
+            </div>
+          </div>`;
+          break;
+        default:
+          break;
+      }
+
+      // Replace the old element with the new one
+      if (newHtml) {
+        const tempDiv = document.createElement("div");
+        tempDiv.innerHTML = newHtml;
+        const newElement = tempDiv.firstChild;
+        mediaElement.parentNode.replaceChild(newElement, mediaElement);
+
+        // Update rich content
+        setRichContent(richEditorRef.current.innerHTML);
+      }
+
+      // Reset replacement state
+      setIsReplacing(false);
+      setMediaElement(null);
+    }
+    // For other media types, ensure they're on their own line with proper spacing
     else {
-      // Get cursor position and ensure we're at the end of a line
+      // Get selection and range
       const selection = window.getSelection();
       if (selection.rangeCount > 0) {
         const range = selection.getRangeAt(0);
-        const container = range.endContainer;
+
+        // Extract fileId from the URL
+        const fileId = data.url.split("/").pop();
 
         // Create appropriate HTML based on media type
         let mediaHtml = "";
 
         switch (type) {
           case "image":
-            mediaHtml = `<div class="media-container image-container"><img src="${data.url}" alt="User uploaded image" style="max-width: 100%;" /></div>`;
+            mediaHtml = `<div class="media-container image-container" contenteditable="false" data-file-id="${fileId}"><img src="${data.url}" alt="User uploaded image" style="max-width: 100%;" /></div><p><br></p>`;
             break;
           case "video":
-            mediaHtml = `<div class="media-container video-container"><video controls src="${data.url}" style="max-width: 100%;"></video></div>`;
+            mediaHtml = `<div class="media-container video-container" contenteditable="false" data-file-id="${fileId}"><video controls src="${data.url}" style="max-width: 100%;"></video></div><p><br></p>`;
             break;
           case "file":
             mediaHtml = `
-            <div class="media-container file-container">
+            <div class="media-container file-container" contenteditable="false" data-file-url="${
+              data.url
+            }" data-filename="${data.filename}" data-file-id="${fileId}">
               <div class="file-preview">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                   <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
                 <div class="file-info">
-                  <a href="${data.url}" target="_blank" class="file-name">${
+                  <span class="file-name" data-file-url="${data.url}">${
               data.filename
-            }</a>
+            }</span>
                   <span class="file-size">${formatFileSize(data.size)}</span>
+                  <button class="view-file-button" data-file-url="${
+                    data.url
+                  }" data-filename="${
+              data.filename
+            }" type="button">View</button>
                 </div>
               </div>
-            </div>
-          `;
+            </div><p><br></p>`;
             break;
           default:
             return;
         }
 
-        // Ensure we're at the end of a block or create a new paragraph
-        const isAtBlockEnd = isAtEndOfBlock(container);
+        // Ensure we're at a block boundary (beginning or end of paragraph)
+        const currentNode = range.startContainer;
+        const isAtBlockStart = range.startOffset === 0;
 
-        if (isAtBlockEnd) {
-          // Insert the media HTML after the current block
-          document.execCommand("insertHTML", false, mediaHtml);
-        } else {
-          // Insert a line break first, then the media HTML
-          document.execCommand("insertHTML", false, "<br>" + mediaHtml);
+        // Check if we need to insert a line break before the media
+        let needsLineBreakBefore = false;
+
+        // If we're in a text node, check if we're not at the beginning of a block element
+        if (currentNode.nodeType === Node.TEXT_NODE && !isAtBlockStart) {
+          needsLineBreakBefore = true;
         }
+
+        // Create the full HTML to insert with appropriate spacing
+        let fullHtml = "";
+
+        if (needsLineBreakBefore) {
+          fullHtml = `<p><br></p>${mediaHtml}`;
+        } else {
+          fullHtml = mediaHtml;
+        }
+
+        // Insert the HTML
+        document.execCommand("insertHTML", false, fullHtml);
+
+        // Update content state
+        setRichContent(richEditorRef.current.innerHTML);
+
+        // Set focus to the paragraph after the media element
+        setTimeout(() => {
+          const paragraphs = richEditorRef.current.querySelectorAll("p");
+          if (paragraphs.length > 0) {
+            const lastP = paragraphs[paragraphs.length - 1];
+            const range = document.createRange();
+            const sel = window.getSelection();
+
+            range.setStart(lastP, 0);
+            range.collapse(true);
+
+            sel.removeAllRanges();
+            sel.addRange(range);
+            richEditorRef.current.focus();
+          }
+        }, 0);
       }
     }
-
-    // Update content state
-    setRichContent(richEditorRef.current.innerHTML);
   };
 
-  // Helper to check if cursor is at the end of a block
-  const isAtEndOfBlock = (node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      // If we're in a text node
-      if (node.nextSibling) return false; // Not at the end if there's a next sibling
-      return isAtEndOfBlock(node.parentNode); // Check parent instead
-    }
+  // // Helper to check if cursor is at the end of a block
+  // const isAtEndOfBlock = (node) => {
+  //   if (node.nodeType === Node.TEXT_NODE) {
+  //     // If we're in a text node
+  //     if (node.nextSibling) return false; // Not at the end if there's a next sibling
+  //     return isAtEndOfBlock(node.parentNode); // Check parent instead
+  //   }
 
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      const isBlock = getComputedStyle(node).display === "block";
-      if (isBlock) {
-        return true; // We're at a block element, so we'll consider it the end
-      }
+  //   if (node.nodeType === Node.ELEMENT_NODE) {
+  //     const isBlock = getComputedStyle(node).display === "block";
+  //     if (isBlock) {
+  //       return true; // We're at a block element, so we'll consider it the end
+  //     }
 
-      // If not a block, check if parent is at end of its block
-      if (node.parentNode) {
-        return isAtEndOfBlock(node.parentNode);
-      }
-    }
+  //     // If not a block, check if parent is at end of its block
+  //     if (node.parentNode) {
+  //       return isAtEndOfBlock(node.parentNode);
+  //     }
+  //   }
 
-    return true; // Default to true if we can't determine
-  };
+  //   return true; // Default to true if we can't determine
+  // };
 
   // Helper function to format file size
   const formatFileSize = (bytes) => {
@@ -735,6 +868,179 @@ Please provide a clear, helpful answer based only on the information in the text
     setIsFlashcardModalOpen(true);
   };
 
+  // Handle clicking on media elements in the editor
+  const handleEditorClick = (e) => {
+    // Handle clicking on media elements
+    if (e.target.closest(".media-container")) {
+      // If it's a media container, prevent default text editing behavior
+      const container = e.target.closest(".media-container");
+
+      // If it's specifically a file container, maybe we want to handle click differently
+      if (container.classList.contains("file-container")) {
+        // Only handle if the click wasn't on the view button (that's handled separately)
+        if (
+          !e.target.classList.contains("view-file-button") &&
+          !e.target.classList.contains("file-name")
+        ) {
+          e.stopPropagation();
+        }
+      }
+    }
+  };
+
+  // Add this function to handle file viewing
+  const handleViewFile = (fileUrl, fileName) => {
+    setFileSidebar({
+      isOpen: true,
+      fileUrl,
+      fileName,
+    });
+  };
+
+  // Add event handler setup for file viewer buttons
+  useEffect(() => {
+    const handleFileButtonClick = (e) => {
+      // Check if the click was on a view file button
+      if (
+        e.target.classList.contains("view-file-button") ||
+        e.target.classList.contains("file-name")
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const fileUrl = e.target.getAttribute("data-file-url");
+        const fileName = e.target.getAttribute("data-filename") || "File";
+
+        if (fileUrl) {
+          handleViewFile(fileUrl, fileName);
+        }
+      }
+    };
+
+    // Store the current ref value
+    const currentEditorRef = richEditorRef.current;
+
+    // Add event listener to the editor
+    if (currentEditorRef) {
+      currentEditorRef.addEventListener("click", handleFileButtonClick);
+    }
+
+    return () => {
+      // Use the stored ref in cleanup
+      if (currentEditorRef) {
+        currentEditorRef.removeEventListener("click", handleFileButtonClick);
+      }
+    };
+  }, []); // Only re-run if the editor reference changes
+
+  // Add this function to handle right-clicks on media elements
+  const handleMediaContextMenu = (e) => {
+    e.preventDefault();
+
+    // Find the closest media container
+    const mediaContainer = e.target.closest(".media-container");
+    if (!mediaContainer) return;
+
+    // Determine media type
+    let mediaType = "unknown";
+    if (mediaContainer.classList.contains("image-container"))
+      mediaType = "image";
+    if (mediaContainer.classList.contains("video-container"))
+      mediaType = "video";
+    if (mediaContainer.classList.contains("file-container")) mediaType = "file";
+
+    // Get file ID from data-file-id attribute (we'll add this attribute to media HTML)
+    const fileId = mediaContainer.getAttribute("data-file-id");
+
+    // Show context menu
+    setContextMenu({
+      show: true,
+      x: e.pageX,
+      y: e.pageY,
+      mediaType,
+      mediaElement: mediaContainer,
+      fileId,
+    });
+  };
+
+  // Add function to delete media
+  const handleDeleteMedia = async () => {
+    if (!contextMenu.mediaElement || !contextMenu.fileId) return;
+
+    try {
+      // Remove from DOM
+      contextMenu.mediaElement.remove();
+
+      // Update rich content
+      setRichContent(richEditorRef.current.innerHTML);
+
+      // Delete from backend (only if we have fileId)
+      if (contextMenu.fileId) {
+        const token = localStorage.getItem("token");
+        await fetch(`${API_BASE_URL}/api/files/${contextMenu.fileId}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+      }
+    } catch (error) {
+      console.error("Error deleting media:", error);
+    } finally {
+      // Close context menu
+      setContextMenu({
+        show: false,
+        x: 0,
+        y: 0,
+        mediaType: null,
+        mediaElement: null,
+        fileId: null,
+      });
+    }
+  };
+
+  // Add function to replace media
+  const handleReplaceMedia = () => {
+    if (!contextMenu.mediaElement) return;
+
+    // Open Media Dialog with current media type
+    setMediaType(contextMenu.mediaType);
+    setMediaElement(contextMenu.mediaElement);
+    setIsReplacing(true);
+    setShowMediaDialog(true);
+
+    // Close context menu
+    setContextMenu({
+      show: false,
+      x: 0,
+      y: 0,
+      mediaType: null,
+      mediaElement: null,
+      fileId: null,
+    });
+  };
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (contextMenu.show && !e.target.closest(".media-context-menu")) {
+        setContextMenu({
+          show: false,
+          x: 0,
+          y: 0,
+          mediaType: null,
+          mediaElement: null,
+          fileId: null,
+        });
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [contextMenu.show]);
+
   return (
     <div className={`editor-container ${!isSidebarOpen ? "full-width" : ""}`}>
       <EditorHeader onCreate={onCreate} />
@@ -747,14 +1053,18 @@ Please provide a clear, helpful answer based only on the information in the text
           placeholder="Note title..."
         />
 
-        {/* Always use rich text editor */}
+        {/* Always use rich text editor - Added onContextMenu handler */}
         <div
           ref={richEditorRef}
           className="editor-content rich-editor"
           contentEditable
           onInput={handleRichTextInput}
           onSelect={handleRichTextSelection}
-          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(richContent) }}
+          onClick={handleEditorClick}
+          onContextMenu={handleMediaContextMenu}
+          dangerouslySetInnerHTML={{
+            __html: DOMPurify.sanitize(richContent, purifyConfig),
+          }}
           placeholder="Start typing your note..."
         ></div>
 
@@ -814,6 +1124,50 @@ Please provide a clear, helpful answer based only on the information in the text
         loading={isAskAILoading}
         response={askAIResponse}
       />
+
+      {/* Right filebar side */}
+      <FileSidebar
+        isOpen={fileSidebar.isOpen}
+        onClose={() => setFileSidebar({ ...fileSidebar, isOpen: false })}
+        fileUrl={fileSidebar.fileUrl}
+        fileName={fileSidebar.fileName}
+      />
+
+      {/* Media context menu - NEW */}
+      {contextMenu.show && (
+        <MediaContextMenu
+          position={{ x: contextMenu.x, y: contextMenu.y }}
+          onDelete={handleDeleteMedia}
+          onReplace={handleReplaceMedia}
+          onClose={() =>
+            setContextMenu({
+              show: false,
+              x: 0,
+              y: 0,
+              mediaType: null,
+              mediaElement: null,
+              fileId: null,
+            })
+          }
+        />
+      )}
+
+      {/* Media Dialog for replacements - NEW */}
+      {showMediaDialog && (
+        <MediaDialog
+          type={mediaType}
+          isOpen={showMediaDialog}
+          onClose={() => {
+            setShowMediaDialog(false);
+            setIsReplacing(false);
+            setMediaElement(null);
+          }}
+          onInsert={(type, data) => {
+            handleMediaInsertion(type, data);
+            setShowMediaDialog(false);
+          }}
+        />
+      )}
     </div>
   );
 };
