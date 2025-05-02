@@ -2,6 +2,9 @@ import React, { useState, useRef } from "react";
 import "./MediaDialog.css";
 import { X } from "lucide-react";
 
+// Add the API base URL constant
+const API_BASE_URL = "https://new-bytes-notes-backend.onrender.com";
+
 const MediaDialog = ({ type, isOpen, onClose, onInsert }) => {
   const [url, setUrl] = useState("");
   const [file, setFile] = useState(null);
@@ -63,7 +66,8 @@ const MediaDialog = ({ type, isOpen, onClose, onInsert }) => {
       formData.append("file", file);
       formData.append("type", type);
 
-      const response = await fetch("/api/upload", {
+      // Update the fetch URL to use the deployed backend URL
+      const response = await fetch(`${API_BASE_URL}/api/upload`, {
         method: "POST",
         body: formData,
         headers: {
@@ -77,15 +81,21 @@ const MediaDialog = ({ type, isOpen, onClose, onInsert }) => {
         throw new Error(data.message || `Failed to upload ${type}`);
       }
 
+      // Update the URL to include the base URL if it's a relative path
+      const fileUrl = data.url.startsWith("http")
+        ? data.url
+        : `${API_BASE_URL}${data.url}`;
+
       onInsert(type, {
-        url: data.url,
+        url: fileUrl,
         filename: data.filename,
         contentType: data.contentType,
         size: data.size,
       });
       onClose();
     } catch (err) {
-      setError(err.message);
+      console.error("Upload error:", err);
+      setError(err.message || "Failed to upload file");
     } finally {
       setIsUploading(false);
     }
