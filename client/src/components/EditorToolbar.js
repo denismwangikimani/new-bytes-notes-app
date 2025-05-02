@@ -137,12 +137,36 @@ const EditorToolbar = ({ onFormatText }) => {
       {/* Font dropdown - ADDED ref and stopPropagation */}
       <div className="toolbar-dropdown">
         <button
-          ref={fontButtonRef} // Assign ref
+          ref={fontButtonRef}
           className="toolbar-button dropdown-toggle"
           onClick={(e) => {
-            e.stopPropagation(); // Prevent click from closing menu immediately
-            setShowFontMenu(!showFontMenu);
+            e.stopPropagation();
+            console.log("Font button clicked, showFontMenu:", !showFontMenu);
+
+            // Toggle state first
+            const newState = !showFontMenu;
+            setShowFontMenu(newState);
             setShowHeadingMenu(false); // Close other menu
+
+            // Position the menu AFTER updating state
+            if (newState && fontButtonRef.current) {
+              const rect = fontButtonRef.current.getBoundingClientRect();
+
+              // Slight delay to ensure the menu exists in the DOM
+              setTimeout(() => {
+                if (fontMenuRef.current) {
+                  fontMenuRef.current.style.left = `${rect.left}px`;
+                  fontMenuRef.current.style.top = `${rect.top - 220}px`; // Position above button
+
+                  // Check if menu would go off screen at top
+                  const menuRect = fontMenuRef.current.getBoundingClientRect();
+                  if (menuRect.top < 10) {
+                    // Position below the button instead
+                    fontMenuRef.current.style.top = `${rect.bottom + 5}px`;
+                  }
+                }
+              }, 0);
+            }
           }}
           title="Font Options"
         >
@@ -150,9 +174,12 @@ const EditorToolbar = ({ onFormatText }) => {
           <ChevronDown size={14} />
         </button>
         {showFontMenu && (
-          <div ref={fontMenuRef} className="dropdown-menu">
-            {" "}
-            {/* Assign ref */}
+          <div
+            ref={fontMenuRef}
+            className="dropdown-menu"
+            style={{ border: "2px solid red" }}
+          >
+            {console.log("Rendering font menu")} {/* Assign ref */}
             {/* Font Family Section */}
             <div className="dropdown-section">
               <div className="dropdown-label">Font Family</div>
@@ -280,8 +307,32 @@ const EditorToolbar = ({ onFormatText }) => {
           className="toolbar-button dropdown-toggle"
           onClick={(e) => {
             e.stopPropagation(); // Prevent click from closing menu immediately
-            setShowHeadingMenu(!showHeadingMenu);
+
+            // Toggle state first
+            const newState = !showHeadingMenu;
+            setShowHeadingMenu(newState);
             setShowFontMenu(false); // Close other menu
+
+            // Position the menu AFTER updating state
+            if (newState && headingButtonRef.current) {
+              const rect = headingButtonRef.current.getBoundingClientRect();
+
+              // Slight delay to ensure the menu exists in the DOM
+              setTimeout(() => {
+                if (headingMenuRef.current) {
+                  headingMenuRef.current.style.left = `${rect.left}px`;
+                  headingMenuRef.current.style.top = `${rect.top - 150}px`; // Position above button
+
+                  // Check if menu would go off screen at top
+                  const menuRect =
+                    headingMenuRef.current.getBoundingClientRect();
+                  if (menuRect.top < 10) {
+                    // Position below the button instead
+                    headingMenuRef.current.style.top = `${rect.bottom + 5}px`;
+                  }
+                }
+              }, 0);
+            }
           }}
           title="Headings"
         >
@@ -289,9 +340,12 @@ const EditorToolbar = ({ onFormatText }) => {
           <ChevronDown size={14} />
         </button>
         {showHeadingMenu && (
-          <div ref={headingMenuRef} className="dropdown-menu heading-menu">
-            {" "}
-            {/* Assign ref */}
+          <div
+            ref={headingMenuRef}
+            className="dropdown-menu heading-menu"
+            style={{ border: "2px solid blue" }}
+          >
+            {console.log("Rendering heading menu")} {/* Assign ref */}
             <button
               className="dropdown-item"
               onClick={() => handleFormat("heading", "h1")}

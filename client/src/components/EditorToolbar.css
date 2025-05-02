@@ -64,19 +64,21 @@
   gap: 2px;
 }
 
+/* Replace the existing .dropdown-menu CSS class */
 .dropdown-menu {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
+  position: fixed; /* Keep this */
+  left: 0; /* This will be set dynamically via JS */
+  top: 0; /* This will be set dynamically via JS */
+  transform: none; /* Remove any transforms */
+  z-index: 9999; /* Keep high z-index */
   background: white;
   border: 1px solid #ddd;
   border-radius: 4px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
   min-width: 180px;
-  z-index: 2100;
-  margin-bottom: 5px;
-  max-height: 300px; /* Added max-height */
-  overflow-y: auto; /* Added overflow */
+  max-height: 300px;
+  overflow-y: auto;
+  display: block; /* Explicitly set display to block */
 }
 
 .heading-menu {
