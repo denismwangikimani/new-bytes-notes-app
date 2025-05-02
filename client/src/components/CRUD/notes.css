@@ -367,9 +367,13 @@ button:disabled {
 }
 
 .editor-content-wrapper {
-  flex: 1;
+  flex: 1; 
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   padding: 1rem 1.5rem;
+  padding-bottom: 60px; 
+  position: relative;
 }
 
 /* Update empty state styles */
@@ -587,4 +591,42 @@ button:disabled {
 
 .move-menu-item:hover {
   background-color: #2d3748;
+}
+
+/* Rich text editor styles */
+.rich-editor {
+  min-height: 200px;
+  padding: 0.5rem 0;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow-y: auto;
+  line-height: 1.5;
+}
+
+.rich-editor[contenteditable]:empty:before {
+  content: attr(placeholder);
+  color: #aaa;
+  font-style: italic;
+}
+
+/* For blockquotes */
+.rich-editor blockquote {
+  border-left: 3px solid #ccc;
+  margin-left: 0;
+  padding-left: 10px;
+  color: #666;
+}
+
+/* For code blocks */
+.rich-editor code {
+  background-color: #f4f4f4;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: monospace;
+}
+
+/* For lists */
+.rich-editor ul, .rich-editor ol {
+  padding-left: 30px;
 }

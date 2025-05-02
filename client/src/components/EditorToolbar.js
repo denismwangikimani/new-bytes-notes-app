@@ -72,7 +72,7 @@ const EditorToolbar = ({ onFormatText }) => {
       ) {
         setShowFontFamilyMenu(false);
       }
-      
+
       // Close font size menu if click is outside
       if (
         showFontSizeMenu &&
@@ -83,7 +83,7 @@ const EditorToolbar = ({ onFormatText }) => {
       ) {
         setShowFontSizeMenu(false);
       }
-      
+
       // Close heading menu if click is outside
       if (
         showHeadingMenu &&
@@ -161,7 +161,10 @@ const EditorToolbar = ({ onFormatText }) => {
           className="toolbar-button dropdown-toggle"
           onClick={(e) => {
             e.stopPropagation();
-            console.log("Font Family button clicked, showing:", !showFontFamilyMenu);
+            console.log(
+              "Font Family button clicked, showing:",
+              !showFontFamilyMenu
+            );
 
             // Toggle state first
             const newState = !showFontFamilyMenu;
@@ -180,10 +183,13 @@ const EditorToolbar = ({ onFormatText }) => {
                   fontFamilyMenuRef.current.style.top = `${rect.top - 220}px`; // Position above button
 
                   // Check if menu would go off screen at top
-                  const menuRect = fontFamilyMenuRef.current.getBoundingClientRect();
+                  const menuRect =
+                    fontFamilyMenuRef.current.getBoundingClientRect();
                   if (menuRect.top < 10) {
                     // Position below the button instead
-                    fontFamilyMenuRef.current.style.top = `${rect.bottom + 5}px`;
+                    fontFamilyMenuRef.current.style.top = `${
+                      rect.bottom + 5
+                    }px`;
                   }
                 }
               }, 0);
@@ -226,7 +232,10 @@ const EditorToolbar = ({ onFormatText }) => {
           className="toolbar-button dropdown-toggle"
           onClick={(e) => {
             e.stopPropagation();
-            console.log("Font Size button clicked, showing:", !showFontSizeMenu);
+            console.log(
+              "Font Size button clicked, showing:",
+              !showFontSizeMenu
+            );
 
             // Toggle state first
             const newState = !showFontSizeMenu;
@@ -245,7 +254,8 @@ const EditorToolbar = ({ onFormatText }) => {
                   fontSizeMenuRef.current.style.top = `${rect.top - 180}px`; // Position above button
 
                   // Check if menu would go off screen at top
-                  const menuRect = fontSizeMenuRef.current.getBoundingClientRect();
+                  const menuRect =
+                    fontSizeMenuRef.current.getBoundingClientRect();
                   if (menuRect.top < 10) {
                     // Position below the button instead
                     fontSizeMenuRef.current.style.top = `${rect.bottom + 5}px`;
@@ -353,7 +363,6 @@ const EditorToolbar = ({ onFormatText }) => {
         <AlignJustify size={18} />
       </button>
       <div className="toolbar-divider"></div>
-
       {/* List buttons */}
       <button
         className="toolbar-button"
@@ -370,7 +379,6 @@ const EditorToolbar = ({ onFormatText }) => {
         <ListOrdered size={18} />
       </button>
       <div className="toolbar-divider"></div>
-
       {/* Headings dropdown - ADDED ref and stopPropagation */}
       <div className="toolbar-dropdown">
         <button
@@ -439,7 +447,6 @@ const EditorToolbar = ({ onFormatText }) => {
           </div>
         )}
       </div>
-
       {/* Strikethrough, Code, Quote buttons */}
       <button
         className="toolbar-button"
@@ -463,7 +470,6 @@ const EditorToolbar = ({ onFormatText }) => {
         <Quote size={18} />
       </button>
       <div className="toolbar-divider"></div>
-
       {/* Future features (disabled) */}
       <button
         className="toolbar-button disabled"

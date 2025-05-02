@@ -13,7 +13,7 @@ import "./notes.css";
 
 const NoteEditor = ({ note, onUpdate, onCreate }) => {
   // Existing state variables
-  const [content, setContent] = useState(note?.content || "");
+  //const [content, setContent] = useState(note?.content || "");
   const [title, setTitle] = useState(note?.title || "");
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [aiResponse, setAIResponse] = useState("");
@@ -25,7 +25,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [transformedText, setTransformedText] = useState("");
   const [isTransformLoading, setIsTransformLoading] = useState(false);
-  const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
+  //const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
   const [transformType, setTransformType] = useState("");
   const [isFlashcardModalOpen, setIsFlashcardModalOpen] = useState(false);
 
@@ -34,20 +34,27 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [askAIResponse, setAskAIResponse] = useState("");
   const [isAskAILoading, setIsAskAILoading] = useState(false);
 
-  // Rich text editing state
-  const [isRichText, setIsRichText] = useState(true);
+  // Rich text editing state - ALWAYS use rich text
+  // Remove isRichText toggle and always use rich text and rack the cursor
   const [richContent, setRichContent] = useState(note?.content || "");
+  const [previousBlockCount, setPreviousBlockCount] = useState(0);
+  const [editorState, setEditorState] = useState({
+    container: null,
+    cursorPosition: null,
+    selectionStart: null,
+    selectionEnd: null,
+    path: [],
+    isNewLine: false,
+  });
 
-  const titleUpdateTimer = useRef(null);
-  const contentRef = useRef(null);
+  //const titleUpdateTimer = useRef(null);
   const richEditorRef = useRef(null);
   const { isSidebarOpen } = useSidebar();
 
   useEffect(() => {
     if (note) {
       setTitle(note.title || "");
-      // Handle either rich text or plain text
-      setContent(note.content || "");
+      // Only handle rich text now
       setRichContent(note.content || "");
     }
   }, [note]);
@@ -55,110 +62,367 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (note?._id) {
-        const contentToUpdate = isRichText ? richContent : content;
-        if (contentToUpdate !== note.content || title !== note.title) {
-          onUpdate(note._id, { title, content: contentToUpdate });
+        if (richContent !== note.content || title !== note.title) {
+          onUpdate(note._id, { title, content: richContent });
         }
       }
     }, 5000);
 
     return () => clearTimeout(timer);
-  }, [content, richContent, title, note, onUpdate, isRichText]);
+  }, [richContent, title, note, onUpdate]);
 
-  // Content change handler for plain text
-  const handleContentChange = (e) => {
-    const newContent = e.target.value;
-    setContent(newContent);
+  // Add the new handleRichTextInput function
+  const handleRichTextInput = (e) => {
+    // Get the current content from the event
+    const newContent = e.currentTarget.innerHTML;
 
-    // Auto-title generation logic
-    if (title === "Untitled Note" || title === "") {
-      const sentenceEnd = Math.min(
-        ...[
-          newContent.indexOf(". "),
-          newContent.indexOf("? "),
-          newContent.indexOf("! "),
-        ].filter((pos) => pos !== -1)
-      );
+    // Save current selection information before updating state
+    const selection = document.getSelection();
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
 
-      let firstSentence;
-      if (sentenceEnd === Infinity) {
-        firstSentence = newContent;
+      // Check if this is a new line event by examining if a new block element
+      // has been created (paragraphs, divs, etc.)
+      const isNewLineEvent = () => {
+        if (!richEditorRef.current) return false;
+
+        // Check the content for new paragraphs or line breaks
+        const currentBlockCount =
+          richEditorRef.current.querySelectorAll("p, div, br").length;
+        const hasMoreBlocksThanBefore = currentBlockCount > previousBlockCount;
+
+        if (hasMoreBlocksThanBefore) {
+          // Update the block count using the state setter
+          setPreviousBlockCount(currentBlockCount);
+          return true;
+        }
+
+        return false;
+      };
+
+      // Special handling for new line events
+      if (isNewLineEvent()) {
+        // For a new line, we want to set the cursor to the new node that was created
+        // We'll search for it in the effect after the render
+        setEditorState({
+          container: null, // We'll find this in the effect
+          cursorPosition: 0, // Position at the start of the new line
+          selectionStart: 0,
+          selectionEnd: 0,
+          path: [], // We'll set this to the last element's path
+          isNewLine: true, // Flag to indicate this is after pressing Enter
+        });
       } else {
-        firstSentence = newContent.slice(0, sentenceEnd + 1);
-      }
-
-      if (firstSentence.trim()) {
-        clearTimeout(titleUpdateTimer.current);
-        titleUpdateTimer.current = setTimeout(() => {
-          setTitle(firstSentence.trim());
-        }, 5000);
+        // Normal case - save the current position information
+        setEditorState({
+          container: range.endContainer,
+          cursorPosition: range.endOffset,
+          selectionStart: range.startOffset,
+          selectionEnd: range.endOffset,
+          path: getNodePath(range.endContainer, richEditorRef.current),
+          isNewLine: false,
+        });
       }
     }
+
+    // Update the content state
+    setRichContent(newContent);
   };
+
+  // Add this helper function to track the path to a node
+  const getNodePath = (node, rootNode) => {
+    if (!node || !rootNode) return [];
+
+    // If the node is the root, return empty path
+    if (node === rootNode) return [];
+
+    const path = [];
+    let currentNode = node;
+
+    // Traverse up the DOM tree until we reach the root
+    while (currentNode && currentNode !== rootNode) {
+      const parent = currentNode.parentNode;
+      if (!parent) break;
+
+      // Find the index of the current node among its siblings
+      const children = Array.from(parent.childNodes);
+      const index = children.indexOf(currentNode);
+
+      path.unshift(index);
+      currentNode = parent;
+    }
+
+    return path;
+  };
+
+  // Add missing useEffect to initialize block count
+  useEffect(() => {
+    if (richEditorRef.current) {
+      const initialBlockCount =
+        richEditorRef.current.querySelectorAll("p, div, br").length;
+      setPreviousBlockCount(initialBlockCount);
+    }
+  }, []);
+
+  // Find a node using the saved path
+  const findNodeByPath = (rootNode, path) => {
+    if (!rootNode || !path.length) return rootNode;
+
+    let currentNode = rootNode;
+
+    for (const index of path) {
+      if (currentNode.childNodes && index < currentNode.childNodes.length) {
+        currentNode = currentNode.childNodes[index];
+      } else {
+        // Path is invalid, return the last valid node
+        return currentNode;
+      }
+    }
+
+    return currentNode;
+  };
+
+  // Now replace the cursor restoration effect with this improved version
+  useEffect(() => {
+    if (!richEditorRef.current || editorState.cursorPosition === null) return;
+
+    // Wait for the DOM to update
+    setTimeout(() => {
+      const selection = document.getSelection();
+      selection.removeAllRanges();
+
+      try {
+        // Create a new range
+        const range = document.createRange();
+
+        // Special handling for a new line event
+        if (editorState.isNewLine) {
+          // Find the last block element in the editor
+          const blocks = richEditorRef.current.querySelectorAll("p, div");
+          if (blocks.length > 0) {
+            const lastBlock = blocks[blocks.length - 1];
+
+            // Position cursor at the beginning of the last block element
+            if (lastBlock.firstChild) {
+              // If the block has content, place at beginning of content
+              range.setStart(lastBlock.firstChild, 0);
+              range.setEnd(lastBlock.firstChild, 0);
+            } else {
+              // If the block is empty, place inside it
+              range.setStart(lastBlock, 0);
+              range.setEnd(lastBlock, 0);
+            }
+
+            selection.addRange(range);
+            richEditorRef.current.focus();
+            return;
+          }
+        }
+
+        // Regular case - use the saved path
+        let targetNode;
+        if (editorState.path && editorState.path.length) {
+          targetNode = findNodeByPath(richEditorRef.current, editorState.path);
+        }
+
+        // If we can't find the node by path, find the last text node
+        if (!targetNode || targetNode.nodeType !== 3) {
+          const findLastTextNode = (node) => {
+            if (!node) return null;
+
+            // If this is already a text node with content, return it
+            if (node.nodeType === 3) {
+              return node;
+            }
+
+            // Check children in reverse order (to find the last one)
+            if (node.childNodes && node.childNodes.length) {
+              for (let i = node.childNodes.length - 1; i >= 0; i--) {
+                const lastNode = findLastTextNode(node.childNodes[i]);
+                if (lastNode) return lastNode;
+              }
+            }
+
+            return null;
+          };
+
+          targetNode = findLastTextNode(richEditorRef.current);
+        }
+
+        // If we found a valid node, position the cursor
+        if (targetNode) {
+          // For text nodes, use normal positioning
+          if (targetNode.nodeType === 3) {
+            let position = Math.min(
+              editorState.cursorPosition,
+              targetNode.length
+            );
+            range.setStart(targetNode, position);
+            range.setEnd(targetNode, position);
+          }
+          // For element nodes, position inside the element
+          else {
+            range.selectNodeContents(targetNode);
+            range.collapse(false); // Move to end
+          }
+
+          selection.addRange(range);
+        }
+        // Fallback - just place at the end of the editor
+        else {
+          const lastChild = richEditorRef.current.lastChild;
+          if (lastChild) {
+            range.selectNodeContents(lastChild);
+            range.collapse(false); // Move to end
+            selection.addRange(range);
+          }
+        }
+
+        // Maintain focus on editor
+        richEditorRef.current.focus();
+      } catch (error) {
+        console.log("Error restoring cursor:", error);
+      }
+    }, 0);
+  }, [richContent, editorState]);
 
   // Handle rich text formatting
   const handleFormatText = (formatType, value = null) => {
     // Save the current selection
     const selection = document.getSelection();
-    //const range = selection.getRangeAt(0);
 
-    // Apply formatting based on type
+    if (!selection.rangeCount) {
+      // No selection, exit early
+      return;
+    }
+
+    // Focus the editor before applying commands
+    richEditorRef.current.focus();
+
+    // Get the current range
+    const range = selection.getRangeAt(0);
+
+    // Apply styling with CSS to ensure proper styling
     document.execCommand("styleWithCSS", false, true);
 
-    switch (formatType) {
-      case "bold":
-        document.execCommand("bold", false, null);
-        break;
-      case "italic":
-        document.execCommand("italic", false, null);
-        break;
-      case "underline":
-        document.execCommand("underline", false, null);
-        break;
-      case "strikethrough":
-        document.execCommand("strikeThrough", false, null);
-        break;
-      case "fontFamily":
-        document.execCommand("fontName", false, value);
-        break;
-      case "fontSize":
-        // Convert px to pt for execCommand
-        const size = parseInt(value.replace("px", ""));
-        const pt = Math.ceil(size * 0.75); // approximation of px to pt
-        document.execCommand("fontSize", false, pt);
-        break;
-      case "textColor":
-        document.execCommand("foreColor", false, value);
-        break;
-      case "backgroundColor":
-        document.execCommand("hiliteColor", false, value);
-        break;
-      case "align":
-        document.execCommand(
-          "justify" + value.charAt(0).toUpperCase() + value.slice(1),
-          false,
-          null
-        );
-        break;
-      case "bulletList":
-        document.execCommand("insertUnorderedList", false, null);
-        break;
-      case "numberedList":
-        document.execCommand("insertOrderedList", false, null);
-        break;
-      case "heading":
-        document.execCommand("formatBlock", false, value);
-        break;
-      case "blockquote":
-        document.execCommand("formatBlock", false, "blockquote");
-        break;
-      case "code":
-        // Wrap selection in <code> tags
-        const codeHtml = `<code style="background-color: #f4f4f4; padding: 2px 4px; border-radius: 3px; font-family: monospace;">${selection.toString()}</code>`;
-        document.execCommand("insertHTML", false, codeHtml);
-        break;
-      default:
-        console.log("Formatting not implemented: ", formatType);
+    // Helper to determine if selection is an entire paragraph
+    const isEntireParagraph = () => {
+      // eslint-disable-next-line no-unused-vars
+      const parentElement =
+        range.commonAncestorContainer.nodeType === 1
+          ? range.commonAncestorContainer
+          : range.commonAncestorContainer.parentElement;
+
+      // If selection starts at beginning and ends at end of element
+      return (
+        range.startOffset === 0 &&
+        range.endOffset ===
+          (range.endContainer.nodeType === 3
+            ? range.endContainer.length
+            : range.endContainer.childNodes.length)
+      );
+    };
+
+    // For lists and alignment, we need special handling to ensure we only affect the selected text
+    if (
+      ["bulletList", "numberedList", "align"].includes(formatType.split(".")[0])
+    ) {
+      // Store the selected content
+      const fragment = range.cloneContents();
+      const tempDiv = document.createElement("div");
+      tempDiv.appendChild(fragment);
+      const selectedHtml = tempDiv.innerHTML;
+
+      // For alignment specifically
+      if (formatType === "align") {
+        // If it's whole paragraphs or block elements, apply directly
+        if (isEntireParagraph()) {
+          document.execCommand(
+            "justify" + value.charAt(0).toUpperCase() + value.slice(1),
+            false,
+            null
+          );
+        } else {
+          // For partial selections, wrap in a div with the alignment
+          const alignmentDiv = `<div style="text-align: ${value}">${selectedHtml}</div>`;
+          document.execCommand("insertHTML", false, alignmentDiv);
+        }
+      }
+      // For lists, handle specially
+      else if (formatType === "bulletList") {
+        if (isEntireParagraph()) {
+          document.execCommand("insertUnorderedList", false, null);
+        } else {
+          // For partial selections, create a list explicitly
+          const listHtml = `<ul><li>${selectedHtml}</li></ul>`;
+          document.execCommand("insertHTML", false, listHtml);
+        }
+      } else if (formatType === "numberedList") {
+        if (isEntireParagraph()) {
+          document.execCommand("insertOrderedList", false, null);
+        } else {
+          // For partial selections, create a list explicitly
+          const listHtml = `<ol><li>${selectedHtml}</li></ol>`;
+          document.execCommand("insertHTML", false, listHtml);
+        }
+      }
+    }
+    // Handle all other formatting cases
+    else {
+      switch (formatType) {
+        case "bold":
+          document.execCommand("bold", false, null);
+          break;
+        case "italic":
+          document.execCommand("italic", false, null);
+          break;
+        case "underline":
+          document.execCommand("underline", false, null);
+          break;
+        case "strikethrough":
+          document.execCommand("strikeThrough", false, null);
+          break;
+        case "fontFamily":
+          document.execCommand("fontName", false, value);
+          break;
+        case "fontSize":
+          // Convert px to pt for execCommand
+          const size = parseInt(value.replace("px", ""));
+          const pt = Math.ceil(size * 0.75); // approximation of px to pt
+          document.execCommand("fontSize", false, pt);
+          break;
+        case "textColor":
+          document.execCommand("foreColor", false, value);
+          break;
+        case "backgroundColor":
+          document.execCommand("hiliteColor", false, value);
+          break;
+        case "heading":
+          // For headings, we need to make sure it's only applied to selected content
+          if (isEntireParagraph()) {
+            document.execCommand("formatBlock", false, value);
+          } else {
+            // Wrap the selected content in the appropriate heading tag
+            const headingHtml = `<${value}>${selection.toString()}</${value}>`;
+            document.execCommand("insertHTML", false, headingHtml);
+          }
+          break;
+        case "blockquote":
+          if (isEntireParagraph()) {
+            document.execCommand("formatBlock", false, "blockquote");
+          } else {
+            const quoteHtml = `<blockquote>${selection.toString()}</blockquote>`;
+            document.execCommand("insertHTML", false, quoteHtml);
+          }
+          break;
+        case "code":
+          // Wrap selection in <code> tags
+          const codeHtml = `<code style="background-color: #f4f4f4; padding: 2px 4px; border-radius: 3px; font-family: monospace;">${selection.toString()}</code>`;
+          document.execCommand("insertHTML", false, codeHtml);
+          break;
+        default:
+          console.log("Formatting not implemented: ", formatType);
+      }
     }
 
     // Update rich content after applying formatting
@@ -192,26 +456,9 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       const response = await generateContent(prompt);
       setAIResponse(response);
 
-      if (isRichText && richEditorRef.current) {
+      if (richEditorRef.current) {
         document.execCommand("insertText", false, response);
         setRichContent(richEditorRef.current.innerHTML);
-      } else if (contentRef.current) {
-        const cursorPosition = contentRef.current.selectionStart;
-        const newContent =
-          content.substring(0, cursorPosition) +
-          response +
-          content.substring(cursorPosition);
-
-        setContent(newContent);
-
-        setTimeout(() => {
-          if (contentRef.current) {
-            const newPosition = cursorPosition + response.length;
-            contentRef.current.selectionStart = newPosition;
-            contentRef.current.selectionEnd = newPosition;
-            contentRef.current.focus();
-          }
-        }, 0);
       }
 
       setTimeout(() => {
@@ -223,42 +470,6 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Text selection handler for plain text
-  const handleTextSelection = () => {
-    if (!contentRef.current) return;
-
-    const start = contentRef.current.selectionStart;
-    const end = contentRef.current.selectionEnd;
-
-    // Clear selection toolbar if no text is selected
-    if (start === end) {
-      setSelectionPosition(null);
-      return;
-    }
-
-    const text = content.substring(start, end);
-
-    // Clear selection toolbar if selected text is empty
-    if (!text.trim()) {
-      setSelectionPosition(null);
-      return;
-    }
-
-    // Get position for the toolbar
-    const textarea = contentRef.current;
-    const rect = textarea.getBoundingClientRect();
-
-    // Calculate approximate position of cursor
-    setSelectionPosition({
-      x: rect.left + rect.width / 2,
-      y: rect.top - 10,
-    });
-
-    // Save selected text and range
-    setSelectedText(text);
-    setSelectionRange({ start, end });
   };
 
   // Rich text selection handler
@@ -292,9 +503,6 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   // Accept the transformed text for rich editor
   const handleAcceptTransformRich = () => {
     if (richEditorRef.current) {
-      // Get current selection
-      //const selection = document.getSelection();
-
       // Replace selection with transformed text
       document.execCommand("insertText", false, transformedText);
 
@@ -307,7 +515,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     }
   };
 
-  // Other existing handlers and functions...
+  // Handle transformation options
   const handleTransformOption = async (option) => {
     console.log(
       `%c[NoteEditor DEBUG] Transform option selected: ${option}`,
@@ -368,31 +576,9 @@ Please provide a clear, helpful answer based only on the information in the text
     }
   };
 
-  // Accept the transformed text for plain text
+  // Accept the transformed text
   const handleAcceptTransform = () => {
-    if (isRichText) {
-      handleAcceptTransformRich();
-      return;
-    }
-
-    // For plain text editor
-    const newContent =
-      content.substring(0, selectionRange.start) +
-      transformedText +
-      content.substring(selectionRange.end);
-
-    setContent(newContent);
-    setIsPreviewModalOpen(false);
-
-    // Reset cursor position
-    setTimeout(() => {
-      if (contentRef.current) {
-        const newPosition = selectionRange.start + transformedText.length;
-        contentRef.current.selectionStart = newPosition;
-        contentRef.current.selectionEnd = newPosition;
-        contentRef.current.focus();
-      }
-    }, 0);
+    handleAcceptTransformRich();
   };
 
   // Reject the transformed text
@@ -405,8 +591,6 @@ Please provide a clear, helpful answer based only on the information in the text
     const handleClickOutside = (e) => {
       if (
         selectionPosition &&
-        contentRef.current &&
-        !contentRef.current.contains(e.target) &&
         (!richEditorRef.current || !richEditorRef.current.contains(e.target))
       ) {
         setSelectionPosition(null);
@@ -456,37 +640,19 @@ Please provide a clear, helpful answer based only on the information in the text
           placeholder="Note title..."
         />
 
-        {isRichText ? (
-          <div
-            ref={richEditorRef}
-            className="editor-content rich-editor"
-            contentEditable
-            onInput={(e) => setRichContent(e.currentTarget.innerHTML)}
-            onSelect={handleRichTextSelection}
-            dangerouslySetInnerHTML={{ __html: richContent }}
-            placeholder="Start typing your note..."
-          ></div>
-        ) : (
-          <textarea
-            ref={contentRef}
-            value={content}
-            onChange={handleContentChange}
-            onSelect={handleTextSelection}
-            className="editor-content"
-            placeholder="Start typing your note..."
-          />
-        )}
+        {/* Always use rich text editor */}
+        <div
+          ref={richEditorRef}
+          className="editor-content rich-editor"
+          contentEditable
+          onInput={handleRichTextInput}
+          onSelect={handleRichTextSelection}
+          dangerouslySetInnerHTML={{ __html: richContent }}
+          placeholder="Start typing your note..."
+        ></div>
 
-        {/* Editor toolbar for rich text formatting */}
-        {isRichText && <EditorToolbar onFormatText={handleFormatText} />}
-
-        {/* Toggle between rich text and plain text */}
-        <button
-          className="toggle-editor-mode"
-          onClick={() => setIsRichText(!isRichText)}
-        >
-          {isRichText ? "Switch to Plain Text" : "Switch to Rich Text"}
-        </button>
+        {/* Editor toolbar is always shown */}
+        <EditorToolbar onFormatText={handleFormatText} />
       </div>
 
       {/* AI Assistant */}
@@ -509,7 +675,7 @@ Please provide a clear, helpful answer based only on the information in the text
       <FlashcardModal
         isOpen={isFlashcardModalOpen}
         onClose={() => setIsFlashcardModalOpen(false)}
-        noteContent={isRichText ? richContent : content}
+        noteContent={richContent}
       />
 
       {/* Text selection toolbar */}

@@ -1,12 +1,13 @@
 .editor-toolbar {
-  position: sticky;
+  position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
   background-color: #f5f5f5;
   border-top: 1px solid #e0e0e0;
   padding: 6px 10px;
-  z-index: 10;
+  z-index: 10; /*helps in making the sidebar visible and overlapping the toolbar */
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
 }
 
 .toolbar-inner {
