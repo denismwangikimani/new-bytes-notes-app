@@ -64,13 +64,12 @@
   gap: 2px;
 }
 
-/* Replace the existing .dropdown-menu CSS class */
 .dropdown-menu {
-  position: fixed; /* Keep this */
-  left: 0; /* This will be set dynamically via JS */
-  top: 0; /* This will be set dynamically via JS */
-  transform: none; /* Remove any transforms */
-  z-index: 9999; /* Keep high z-index */
+  position: fixed; 
+  left: 0; 
+  top: 0; 
+  transform: none; 
+  z-index: 9999; 
   background: white;
   border: 1px solid #ddd;
   border-radius: 4px;
@@ -78,7 +77,7 @@
   min-width: 180px;
   max-height: 300px;
   overflow-y: auto;
-  display: block; /* Explicitly set display to block */
+  display: block; 
 }
 
 .heading-menu {
@@ -160,6 +159,14 @@
 .secondary-tools {
   display: flex;
   align-items: center;
+}
+
+.font-family-menu {
+  min-width: 200px;
+}
+
+.font-size-menu {
+  min-width: 120px;
 }
 
 @media (max-width: 768px) {

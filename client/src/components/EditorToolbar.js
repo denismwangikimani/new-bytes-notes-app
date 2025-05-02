@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react"; // Import useEffect and useRef
+import React, { useState, useEffect, useRef } from "react";
 import {
   Bold,
   Italic,
@@ -21,19 +21,24 @@ import {
   Image,
   Link,
   Video,
+  // Add this new import for font family icon
+  BookText,
 } from "lucide-react";
 import "./EditorToolbar.css";
 
 const EditorToolbar = ({ onFormatText }) => {
   const [showAllTools, setShowAllTools] = useState(false);
-  const [showFontMenu, setShowFontMenu] = useState(false);
+  const [showFontFamilyMenu, setShowFontFamilyMenu] = useState(false); // Renamed from showFontMenu
+  const [showFontSizeMenu, setShowFontSizeMenu] = useState(false); // New state for font size menu
   const [showHeadingMenu, setShowHeadingMenu] = useState(false);
   const [textColor, setTextColor] = useState("#000000");
   const [bgColor, setBgColor] = useState("#ffffff");
 
   // Refs for dropdowns and their toggle buttons
-  const fontMenuRef = useRef(null);
-  const fontButtonRef = useRef(null);
+  const fontFamilyMenuRef = useRef(null); // Renamed
+  const fontFamilyButtonRef = useRef(null); // Renamed
+  const fontSizeMenuRef = useRef(null); // New ref
+  const fontSizeButtonRef = useRef(null); // New ref
   const headingMenuRef = useRef(null);
   const headingButtonRef = useRef(null);
 
@@ -57,16 +62,28 @@ const EditorToolbar = ({ onFormatText }) => {
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
-      // Close font menu if click is outside
+      // Close font family menu if click is outside
       if (
-        showFontMenu &&
-        fontMenuRef.current &&
-        fontButtonRef.current &&
-        !fontMenuRef.current.contains(event.target) &&
-        !fontButtonRef.current.contains(event.target)
+        showFontFamilyMenu &&
+        fontFamilyMenuRef.current &&
+        fontFamilyButtonRef.current &&
+        !fontFamilyMenuRef.current.contains(event.target) &&
+        !fontFamilyButtonRef.current.contains(event.target)
       ) {
-        setShowFontMenu(false);
+        setShowFontFamilyMenu(false);
       }
+      
+      // Close font size menu if click is outside
+      if (
+        showFontSizeMenu &&
+        fontSizeMenuRef.current &&
+        fontSizeButtonRef.current &&
+        !fontSizeMenuRef.current.contains(event.target) &&
+        !fontSizeButtonRef.current.contains(event.target)
+      ) {
+        setShowFontSizeMenu(false);
+      }
+      
       // Close heading menu if click is outside
       if (
         showHeadingMenu &&
@@ -83,13 +100,16 @@ const EditorToolbar = ({ onFormatText }) => {
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [showFontMenu, showHeadingMenu]); // Add dependencies
+  }, [showFontFamilyMenu, showFontSizeMenu, showHeadingMenu]); // Updated dependencies
 
   const handleFormat = (formatType, value = null) => {
     onFormatText(formatType, value);
     // Close menus after selection (existing code)
-    if (formatType === "fontFamily" || formatType === "fontSize") {
-      setShowFontMenu(false);
+    if (formatType === "fontFamily") {
+      setShowFontFamilyMenu(false);
+    }
+    if (formatType === "fontSize") {
+      setShowFontSizeMenu(false);
     }
     if (formatType.startsWith("heading")) {
       setShowHeadingMenu(false);
@@ -107,7 +127,7 @@ const EditorToolbar = ({ onFormatText }) => {
     }
   };
 
-  // Primary tools definition (modified font dropdown part)
+  // Primary tools definition with separate font family and font size
   const primaryTools = (
     <>
       {/* Bold, Italic, Underline buttons */}
@@ -134,52 +154,53 @@ const EditorToolbar = ({ onFormatText }) => {
       </button>
       <div className="toolbar-divider"></div>
 
-      {/* Font dropdown - ADDED ref and stopPropagation */}
+      {/* Font Family dropdown - Use BookText icon */}
       <div className="toolbar-dropdown">
         <button
-          ref={fontButtonRef}
+          ref={fontFamilyButtonRef}
           className="toolbar-button dropdown-toggle"
           onClick={(e) => {
             e.stopPropagation();
-            console.log("Font button clicked, showFontMenu:", !showFontMenu);
+            console.log("Font Family button clicked, showing:", !showFontFamilyMenu);
 
             // Toggle state first
-            const newState = !showFontMenu;
-            setShowFontMenu(newState);
-            setShowHeadingMenu(false); // Close other menu
+            const newState = !showFontFamilyMenu;
+            setShowFontFamilyMenu(newState);
+            setShowFontSizeMenu(false); // Close other menus
+            setShowHeadingMenu(false);
 
             // Position the menu AFTER updating state
-            if (newState && fontButtonRef.current) {
-              const rect = fontButtonRef.current.getBoundingClientRect();
+            if (newState && fontFamilyButtonRef.current) {
+              const rect = fontFamilyButtonRef.current.getBoundingClientRect();
 
               // Slight delay to ensure the menu exists in the DOM
               setTimeout(() => {
-                if (fontMenuRef.current) {
-                  fontMenuRef.current.style.left = `${rect.left}px`;
-                  fontMenuRef.current.style.top = `${rect.top - 220}px`; // Position above button
+                if (fontFamilyMenuRef.current) {
+                  fontFamilyMenuRef.current.style.left = `${rect.left}px`;
+                  fontFamilyMenuRef.current.style.top = `${rect.top - 220}px`; // Position above button
 
                   // Check if menu would go off screen at top
-                  const menuRect = fontMenuRef.current.getBoundingClientRect();
+                  const menuRect = fontFamilyMenuRef.current.getBoundingClientRect();
                   if (menuRect.top < 10) {
                     // Position below the button instead
-                    fontMenuRef.current.style.top = `${rect.bottom + 5}px`;
+                    fontFamilyMenuRef.current.style.top = `${rect.bottom + 5}px`;
                   }
                 }
               }, 0);
             }
           }}
-          title="Font Options"
+          title="Font Family"
         >
-          <Type size={18} />
+          <BookText size={18} /> {/* Using BookText for font family */}
           <ChevronDown size={14} />
         </button>
-        {showFontMenu && (
+        {showFontFamilyMenu && (
           <div
-            ref={fontMenuRef}
+            ref={fontFamilyMenuRef}
             className="dropdown-menu"
-            style={{ border: "2px solid red" }}
+            style={{ border: "2px solid green" }}
           >
-            {console.log("Rendering font menu")} {/* Assign ref */}
+            {console.log("Rendering font family menu")}
             {/* Font Family Section */}
             <div className="dropdown-section">
               <div className="dropdown-label">Font Family</div>
@@ -194,7 +215,57 @@ const EditorToolbar = ({ onFormatText }) => {
                 </button>
               ))}
             </div>
-            <div className="dropdown-divider"></div>
+          </div>
+        )}
+      </div>
+
+      {/* Font Size dropdown - Keep Type icon */}
+      <div className="toolbar-dropdown">
+        <button
+          ref={fontSizeButtonRef}
+          className="toolbar-button dropdown-toggle"
+          onClick={(e) => {
+            e.stopPropagation();
+            console.log("Font Size button clicked, showing:", !showFontSizeMenu);
+
+            // Toggle state first
+            const newState = !showFontSizeMenu;
+            setShowFontSizeMenu(newState);
+            setShowFontFamilyMenu(false); // Close other menus
+            setShowHeadingMenu(false);
+
+            // Position the menu AFTER updating state
+            if (newState && fontSizeButtonRef.current) {
+              const rect = fontSizeButtonRef.current.getBoundingClientRect();
+
+              // Slight delay to ensure the menu exists in the DOM
+              setTimeout(() => {
+                if (fontSizeMenuRef.current) {
+                  fontSizeMenuRef.current.style.left = `${rect.left}px`;
+                  fontSizeMenuRef.current.style.top = `${rect.top - 180}px`; // Position above button
+
+                  // Check if menu would go off screen at top
+                  const menuRect = fontSizeMenuRef.current.getBoundingClientRect();
+                  if (menuRect.top < 10) {
+                    // Position below the button instead
+                    fontSizeMenuRef.current.style.top = `${rect.bottom + 5}px`;
+                  }
+                }
+              }, 0);
+            }
+          }}
+          title="Font Size"
+        >
+          <Type size={18} /> {/* Keep the Type icon for font size */}
+          <ChevronDown size={14} />
+        </button>
+        {showFontSizeMenu && (
+          <div
+            ref={fontSizeMenuRef}
+            className="dropdown-menu"
+            style={{ border: "2px solid blue" }}
+          >
+            {console.log("Rendering font size menu")}
             {/* Font Size Section */}
             <div className="dropdown-section">
               <div className="dropdown-label">Font Size</div>
@@ -212,7 +283,7 @@ const EditorToolbar = ({ onFormatText }) => {
         )}
       </div>
 
-      {/* Color pickers */}
+      {/* Color pickers - No changes needed */}
       <div className="color-picker-container">
         <button
           className="toolbar-button color-button"
@@ -311,7 +382,8 @@ const EditorToolbar = ({ onFormatText }) => {
             // Toggle state first
             const newState = !showHeadingMenu;
             setShowHeadingMenu(newState);
-            setShowFontMenu(false); // Close other menu
+            setShowFontFamilyMenu(false); // Close other menu
+            setShowFontSizeMenu(false); // Close other menu
 
             // Position the menu AFTER updating state
             if (newState && headingButtonRef.current) {
@@ -414,7 +486,7 @@ const EditorToolbar = ({ onFormatText }) => {
     </>
   );
 
-  // Main return statement
+  // Main return statement - unchanged
   return (
     <div className="editor-toolbar">
       <div className="toolbar-inner">
