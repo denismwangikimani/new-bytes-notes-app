@@ -1,5 +1,6 @@
 // external imports
 const express = require("express");
+const multer = require("multer");
 const dbConnect = require("./db/dbConnect");
 const User = require("./db/userModel");
 const Note = require("./db/noteModel");
@@ -7,6 +8,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const auth = require("./auth");
 const Group = require("./db/groupModel");
+const File = require("./db/fileModel");
 
 // initialize express app
 const app = express();
@@ -330,6 +332,84 @@ app.put("/notes/:id/move", auth, async (req, res) => {
       .json({ message: "Note moved successfully", note: updatedNote });
   } catch (error) {
     res.status(500).json({ message: "Error moving note", error });
+  }
+});
+
+// Set up multer storage
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 16 * 1024 * 1024, // 16MB limit
+  },
+});
+
+// File upload endpoint
+app.post("/api/upload", auth, upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+
+    const { originalname, mimetype, size, buffer } = req.file;
+    const userId = req.user.userId;
+
+    // Validate file size based on type
+    const isImage = mimetype.startsWith("image/");
+    const maxSize = isImage ? 5 * 1024 * 1024 : 16 * 1024 * 1024; // 5MB for images, 16MB for others
+
+    if (size > maxSize) {
+      return res.status(400).json({
+        message: `File size exceeds the limit (${isImage ? "5MB" : "16MB"})`,
+      });
+    }
+
+    // Create a new file document
+    const newFile = new File({
+      user: userId,
+      filename: originalname,
+      contentType: mimetype,
+      size: size,
+      data: buffer,
+    });
+
+    await newFile.save();
+
+    // Return the file URL
+    const fileUrl = `/api/files/${newFile._id}`;
+
+    res.status(201).json({
+      message: "File uploaded successfully",
+      url: fileUrl,
+      filename: originalname,
+      contentType: mimetype,
+      size: size,
+    });
+  } catch (error) {
+    console.error("Error uploading file:", error);
+    res.status(500).json({ message: "Error uploading file", error });
+  }
+});
+
+// File retrieval endpoint
+app.get("/api/files/:id", async (req, res) => {
+  try {
+    const file = await File.findById(req.params.id);
+
+    if (!file) {
+      return res.status(404).json({ message: "File not found" });
+    }
+
+    res.set({
+      "Content-Type": file.contentType,
+      "Content-Length": file.size,
+      "Content-Disposition": `inline; filename="${file.filename}"`,
+    });
+
+    res.send(file.data);
+  } catch (error) {
+    console.error("Error retrieving file:", error);
+    res.status(500).json({ message: "Error retrieving file", error });
   }
 });
 

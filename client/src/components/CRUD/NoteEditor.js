@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import DOMPurify from "dompurify";
 import EditorHeader from "./EditorHeader";
 import { useSidebar } from "./SidebarContext";
 import AIAssistant from "../AIAssistant";
@@ -54,8 +55,8 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   useEffect(() => {
     if (note) {
       setTitle(note.title || "");
-      // Only handle rich text now
-      setRichContent(note.content || "");
+      // Sanitize content before setting it
+      setRichContent(note?.content ? DOMPurify.sanitize(note.content) : "");
     }
   }, [note]);
 
@@ -291,6 +292,15 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     // Save the current selection
     const selection = document.getSelection();
 
+    // Focus the editor before applying commands
+    richEditorRef.current.focus();
+
+    // Handle media insertions
+    if (["image", "video", "file", "link"].includes(formatType)) {
+      handleMediaInsertion(formatType, value);
+      return;
+    }
+
     if (!selection.rangeCount) {
       // No selection, exit early
       return;
@@ -432,6 +442,103 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
     // Restore focus to the editor
     richEditorRef.current.focus();
+  };
+
+  // Add new function to handle media insertion
+  const handleMediaInsertion = (type, data) => {
+    if (!richEditorRef.current) return;
+
+    // For links, insert at cursor position
+    if (type === "link") {
+      const linkText = window.getSelection().toString() || data.url;
+      const linkHtml = `<a href="${data.url}" target="_blank">${linkText}</a>`;
+      document.execCommand("insertHTML", false, linkHtml);
+    }
+    // For other media types, insert on a new line
+    else {
+      // Get cursor position and ensure we're at the end of a line
+      const selection = window.getSelection();
+      if (selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const container = range.endContainer;
+
+        // Create appropriate HTML based on media type
+        let mediaHtml = "";
+
+        switch (type) {
+          case "image":
+            mediaHtml = `<div class="media-container image-container"><img src="${data.url}" alt="User uploaded image" style="max-width: 100%;" /></div>`;
+            break;
+          case "video":
+            mediaHtml = `<div class="media-container video-container"><video controls src="${data.url}" style="max-width: 100%;"></video></div>`;
+            break;
+          case "file":
+            mediaHtml = `
+            <div class="media-container file-container">
+              <div class="file-preview">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <div class="file-info">
+                  <a href="${data.url}" target="_blank" class="file-name">${
+              data.filename
+            }</a>
+                  <span class="file-size">${formatFileSize(data.size)}</span>
+                </div>
+              </div>
+            </div>
+          `;
+            break;
+          default:
+            return;
+        }
+
+        // Ensure we're at the end of a block or create a new paragraph
+        const isAtBlockEnd = isAtEndOfBlock(container);
+
+        if (isAtBlockEnd) {
+          // Insert the media HTML after the current block
+          document.execCommand("insertHTML", false, mediaHtml);
+        } else {
+          // Insert a line break first, then the media HTML
+          document.execCommand("insertHTML", false, "<br>" + mediaHtml);
+        }
+      }
+    }
+
+    // Update content state
+    setRichContent(richEditorRef.current.innerHTML);
+  };
+
+  // Helper to check if cursor is at the end of a block
+  const isAtEndOfBlock = (node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      // If we're in a text node
+      if (node.nextSibling) return false; // Not at the end if there's a next sibling
+      return isAtEndOfBlock(node.parentNode); // Check parent instead
+    }
+
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const isBlock = getComputedStyle(node).display === "block";
+      if (isBlock) {
+        return true; // We're at a block element, so we'll consider it the end
+      }
+
+      // If not a block, check if parent is at end of its block
+      if (node.parentNode) {
+        return isAtEndOfBlock(node.parentNode);
+      }
+    }
+
+    return true; // Default to true if we can't determine
+  };
+
+  // Helper function to format file size
+  const formatFileSize = (bytes) => {
+    if (bytes < 1024) return bytes + " bytes";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   };
 
   // AI Assistant keyboard shortcut
@@ -647,7 +754,7 @@ Please provide a clear, helpful answer based only on the information in the text
           contentEditable
           onInput={handleRichTextInput}
           onSelect={handleRichTextSelection}
-          dangerouslySetInnerHTML={{ __html: richContent }}
+          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(richContent) }}
           placeholder="Start typing your note..."
         ></div>
 

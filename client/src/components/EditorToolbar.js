@@ -21,10 +21,11 @@ import {
   Image,
   Link,
   Video,
-  // Add this new import for font family icon
+  FileText,
   BookText,
 } from "lucide-react";
 import "./EditorToolbar.css";
+import MediaDialog from "./MediaDialog";
 
 const EditorToolbar = ({ onFormatText }) => {
   const [showAllTools, setShowAllTools] = useState(false);
@@ -33,6 +34,10 @@ const EditorToolbar = ({ onFormatText }) => {
   const [showHeadingMenu, setShowHeadingMenu] = useState(false);
   const [textColor, setTextColor] = useState("#000000");
   const [bgColor, setBgColor] = useState("#ffffff");
+
+  // State for media dialog
+  const [showMediaDialog, setShowMediaDialog] = useState(false);
+  const [mediaType, setMediaType] = useState(null); // 'image', 'video', 'link', or 'file'
 
   // Refs for dropdowns and their toggle buttons
   const fontFamilyMenuRef = useRef(null); // Renamed
@@ -103,6 +108,13 @@ const EditorToolbar = ({ onFormatText }) => {
   }, [showFontFamilyMenu, showFontSizeMenu, showHeadingMenu]); // Updated dependencies
 
   const handleFormat = (formatType, value = null) => {
+    // Handle media insertion differently
+    if (["image", "video", "link", "file"].includes(formatType)) {
+      setMediaType(formatType);
+      setShowMediaDialog(true);
+      return;
+    }
+
     onFormatText(formatType, value);
     // Close menus after selection (existing code)
     if (formatType === "fontFamily") {
@@ -470,25 +482,46 @@ const EditorToolbar = ({ onFormatText }) => {
         <Quote size={18} />
       </button>
       <div className="toolbar-divider"></div>
-      {/* Future features (disabled) */}
+      {/* Media insertion tools */}
       <button
-        className="toolbar-button disabled"
-        title="Insert Image (Coming Soon)"
+        className="toolbar-button"
+        onClick={() => handleFormat("image")}
+        title="Insert Image"
       >
         <Image size={18} />
       </button>
       <button
-        className="toolbar-button disabled"
-        title="Insert Link (Coming Soon)"
+        className="toolbar-button"
+        onClick={() => handleFormat("video")}
+        title="Insert Video"
+      >
+        <Video size={18} />
+      </button>
+      <button
+        className="toolbar-button"
+        onClick={() => handleFormat("link")}
+        title="Insert Link"
       >
         <Link size={18} />
       </button>
       <button
-        className="toolbar-button disabled"
-        title="Insert Video (Coming Soon)"
+        className="toolbar-button"
+        onClick={() => handleFormat("file")}
+        title="Insert File"
       >
-        <Video size={18} />
+        <FileText size={18} />
       </button>
+      {showMediaDialog && (
+        <MediaDialog
+          type={mediaType}
+          isOpen={showMediaDialog}
+          onClose={() => setShowMediaDialog(false)}
+          onInsert={(type, data) => {
+            onFormatText(type, data);
+            setShowMediaDialog(false);
+          }}
+        />
+      )}
     </>
   );
 
