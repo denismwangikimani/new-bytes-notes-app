@@ -512,6 +512,11 @@ app.post(
         return res.status(400).json({ message: "No file uploaded" });
       }
 
+      // Before uploading to Gemini
+      console.log("About to upload to Gemini API:", req.file.originalname);
+      console.log("File size:", req.file.size, "bytes");
+      console.log("File type:", req.file.mimetype);
+
       // Get a Gemini API key
       const geminiApiKey = process.env.GEMINI_API_KEY;
       console.log("GEMINI_API_KEY loaded:", geminiApiKey ? "Yes" : "NO!!!"); // Add this line
@@ -540,6 +545,8 @@ app.post(
           },
         }
       );
+
+      console.log("Successfully uploaded to Gemini:", geminiUploadResponse.data.name);
 
       // Check if file was uploaded successfully
       if (!geminiUploadResponse.data || !geminiUploadResponse.data.name) {

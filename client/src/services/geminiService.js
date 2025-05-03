@@ -1,376 +1,444 @@
 import axios from "axios";
+import { GoogleGenAI } from "@google/genai";
 
+// API key should be in your client .env file as REACT_APP_GEMINI_API_KEY
 const API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
 const API_BASE_URL = "https://new-bytes-notes-backend.onrender.com";
 
-// Check if API_KEY is defined
-if (!API_KEY) {
-  console.error(
-    "Gemini API Key is missing! Make sure REACT_APP_GEMINI_API_KEY is set in your .env file"
-  );
-}
+// Initialize the Google GenAI client
+const genAI = new GoogleGenAI({ apiKey: API_KEY });
 
-// Add a new function to handle file uploads to Gemini
-const uploadFileToGemini = async (fileUrl) => {
+// Function to process a document directly with Gemini using inline data
+const processDocumentInline = async (fileUrl, prompt) => {
   try {
-    console.log("Uploading file to Gemini API:", fileUrl.split("/").pop());
+    console.log(`Processing document inline: ${fileUrl.split("/").pop()}`);
 
-    // Check if fileUrl is a full URL or a relative path
+    // Fetch the file from the server
     const fullUrl = fileUrl.startsWith("http")
       ? fileUrl
       : `${API_BASE_URL}${fileUrl}`;
 
-    // First, fetch the file from your server
-    const response = await fetch(fullUrl);
+    const fileResponse = await fetch(fullUrl);
+    if (!fileResponse.ok) {
+      throw new Error(`Failed to fetch file: ${fileResponse.status}`);
+    }
 
+    // Convert to ArrayBuffer and then to base64
+    const arrayBuffer = await fileResponse.arrayBuffer();
+    const base64Data = arrayBufferToBase64(arrayBuffer);
+
+    // Determine MIME type (default to PDF if unknown)
+    const mimeType = getMimeType(fileUrl);
+
+    // Define the content for the Gemini API - using updated structure
+    const contents = [
+      { text: prompt },
+      {
+        inlineData: {
+          mimeType: mimeType,
+          data: base64Data,
+        },
+      },
+    ];
+
+    // Choose the model to use - updated API method
+    const result = await genAI.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: contents,
+      generationConfig: {
+        temperature: 0.4,
+        maxOutputTokens: 2048,
+      },
+    });
+
+    // Get the text from the result - handle different response structures
+    if (result.response && typeof result.response.text === "function") {
+      return result.response.text();
+    } else if (result.text && typeof result.text === "function") {
+      return result.text();
+    } else if (result.candidates && result.candidates[0]?.content?.parts) {
+      // For REST API style response
+      return result.candidates[0].content.parts[0].text || "";
+    } else {
+      // If we can't find text in expected places, try to stringify the entire response
+      console.log("Unexpected response format:", result);
+      return JSON.stringify(result);
+    }
+  } catch (error) {
+    console.error("Error processing document inline:", error);
+    throw new Error(`Inline processing failed: ${error.message}`);
+  }
+};
+
+// Process a document using the Gemini Files API for larger files
+const processDocumentWithFilesAPI = async (fileUrl, prompt) => {
+  try {
+    console.log(
+      `Processing document with Files API: ${fileUrl.split("/").pop()}`
+    );
+
+    // Fetch the file from the server
+    const fullUrl = fileUrl.startsWith("http")
+      ? fileUrl
+      : `${API_BASE_URL}${fileUrl}`;
+
+    const response = await fetch(fullUrl);
     if (!response.ok) {
+      throw new Error(`Failed to fetch file: ${response.status}`);
+    }
+
+    // Convert to Blob
+    const fileBlob = await response.blob();
+
+    // Determine MIME type (default to PDF if unknown)
+    const mimeType = getMimeType(fileUrl);
+
+    // Upload file using the Gemini Files API - updated API method
+    const file = await genAI.files.upload({
+      file: fileBlob,
+      config: {
+        displayName: fileUrl.split("/").pop() || "document.pdf",
+      },
+    });
+
+    // Wait for file processing
+    let processedFile = file;
+    let attempts = 0;
+    const maxAttempts = 20; // Increase max attempts
+
+    console.log("Initial file state:", processedFile.state);
+
+    // Check if the file is already in a terminal state
+    if (processedFile.state === "PROCESSED") {
+      console.log("File is already processed");
+    } else {
+      // Wait for processing to complete
+      while (
+        (processedFile.state === "PROCESSING" ||
+          processedFile.state === "ACTIVE") &&
+        attempts < maxAttempts
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 3000)); // Increase wait time
+        try {
+          processedFile = await genAI.files.get({ name: processedFile.name });
+          attempts++;
+          console.log(
+            `File processing attempt ${attempts}, state: ${processedFile.state}`
+          );
+        } catch (getError) {
+          console.error("Error checking file state:", getError);
+          attempts++;
+        }
+      }
+    }
+
+    // Some implementations use ACTIVE as a valid state to proceed
+    if (
+      processedFile.state !== "PROCESSED" &&
+      processedFile.state !== "ACTIVE"
+    ) {
       throw new Error(
-        `Failed to fetch file: ${response.status} ${response.statusText}`
+        `File processing failed or timed out: ${processedFile.state}`
       );
     }
 
-    // Get the file as blob
-    const fileBlob = await response.blob();
+    // Create content with the file reference - updated API method
+    const content = [{ text: prompt }];
 
-    // Get the file name from the URL
-    const fileName = fileUrl.split("/").pop() || "document.pdf";
-
-    // Create a FormData object to send the file
-    const formData = new FormData();
-    formData.append("file", fileBlob, fileName);
-
-    // Upload to your backend proxy that will handle the actual Gemini upload
-    const uploadResponse = await axios.post(
-      `${API_BASE_URL}/api/gemini/upload-file`,
-      formData,
-      {
-        headers: {
-          "Content-Type": "multipart/form-data",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      }
-    );
-
-    // Return the file reference data from your backend
-    return uploadResponse.data;
-  } catch (error) {
-    console.error("Error uploading file to Gemini:", error);
-    throw new Error(`Failed to upload file: ${error.message}`);
-  }
-};
-
-export const generateContent = async (prompt) => {
-  try {
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`,
-      {
-        contents: [
-          {
-            parts: [{ text: prompt }],
-          },
-        ],
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    // Extract text from the response
-    if (
-      response.data &&
-      response.data.candidates &&
-      response.data.candidates[0] &&
-      response.data.candidates[0].content &&
-      response.data.candidates[0].content.parts &&
-      response.data.candidates[0].content.parts[0]
-    ) {
-      return response.data.candidates[0].content.parts[0].text;
+    if (processedFile.uri && processedFile.mimeType) {
+      const { createPartFromUri } = await import("@google/genai");
+      const fileContent = createPartFromUri(
+        processedFile.uri,
+        processedFile.mimeType
+      );
+      content.push(fileContent);
     }
 
-    return "Sorry, I couldn't generate a response.";
+    const result = await genAI.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: content,
+      generationConfig: {
+        temperature: 0.4,
+        maxOutputTokens: 2048,
+      },
+    });
+
+    // Get the text from the result - handle different response structures
+    if (result.response && typeof result.response.text === "function") {
+      return result.response.text();
+    } else if (result.text && typeof result.text === "function") {
+      return result.text();
+    } else if (result.candidates && result.candidates[0]?.content?.parts) {
+      // For REST API style response
+      return result.candidates[0].content.parts[0].text || "";
+    } else {
+      // If we can't find text in expected places, try to stringify the entire response
+      console.log("Unexpected response format:", result);
+      return JSON.stringify(result);
+    }
   } catch (error) {
-    console.error("Error calling Gemini API:", error);
-    return "Error generating content. Please try again.";
+    console.error("Error processing document with Files API:", error);
+    throw new Error(`Files API processing failed: ${error.message}`);
   }
 };
 
-// // Helper function to fetch and convert file to base64
-// const fetchFileAsBase64 = async (fileUrl) => {
-//   try {
-//     // Check if fileUrl is a full URL or a relative path
-//     const fullUrl = fileUrl.startsWith("http")
-//       ? fileUrl
-//       : `${API_BASE_URL}${fileUrl}`;
+// Helper function to convert ArrayBuffer to base64
+const arrayBufferToBase64 = (buffer) => {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
+};
 
-//     const response = await fetch(fullUrl);
+// Helper function to get MIME type from URL
+const getMimeType = (fileUrl) => {
+  const extension = fileUrl.split(".").pop().toLowerCase();
 
-//     if (!response.ok) {
-//       throw new Error(
-//         `Failed to fetch file: ${response.status} ${response.statusText}`
-//       );
-//     }
+  const mimeTypes = {
+    pdf: "application/pdf",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    txt: "text/plain",
+    html: "text/html",
+    csv: "text/csv",
+    md: "text/markdown",
+    xml: "text/xml",
+    rtf: "text/rtf",
+  };
 
-//     const arrayBuffer = await response.arrayBuffer();
+  return mimeTypes[extension] || "application/pdf";
+};
 
-//     // Check file size - Gemini has a limit of approximately 20MB for inline data
-//     const fileSizeInMB = arrayBuffer.byteLength / (1024 * 1024);
+// Function to process a document based on file size
+export const processDocument = async (fileUrl, prompt) => {
+  try {
+    // Try the inline approach first for smaller files
+    try {
+      return await processDocumentInline(fileUrl, prompt);
+    } catch (inlineError) {
+      console.log(
+        "Inline processing failed, trying Files API:",
+        inlineError.message
+      );
+      return await processDocumentWithFilesAPI(fileUrl, prompt);
+    }
+  } catch (error) {
+    console.error("All document processing methods failed:", error);
+    throw new Error(`Document processing failed: ${error.message}`);
+  }
+};
 
-//     if (fileSizeInMB > 5) {
-//       throw new Error(
-//         `File is too large (${fileSizeInMB.toFixed(
-//           2
-//         )}MB). Maximum size for processing is 5MB.`
-//       );
-//     }
-
-//     // Convert ArrayBuffer to base64 string using browser APIs
-//     const bytes = new Uint8Array(arrayBuffer);
-//     let binary = "";
-//     for (let i = 0; i < bytes.byteLength; i++) {
-//       binary += String.fromCharCode(bytes[i]);
-//     }
-//     return window.btoa(binary);
-//   } catch (error) {
-//     console.error("Error fetching file:", error);
-//     throw error; // Propagate the specific error
-//   }
-// };
-
-// Function to summarize a document
+// Export functions that use the new processDocument function
 export const summarizeDocument = async (fileUrl) => {
   try {
-    console.log(`Summarizing document: ${fileUrl.split("/").pop()}`);
-
-    // Upload the file to get a file reference
-    const fileData = await uploadFileToGemini(fileUrl);
-
-    // Use the file reference to generate a summary
-    const response = await axios.post(
-      `${API_BASE_URL}/api/gemini/process-file`,
-      {
-        fileUri: fileData.fileUri,
-        mimeType: fileData.mimeType,
-        prompt:
-          "Please provide a concise summary of this document, highlighting the key points and main conclusions.",
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      }
+    return await processDocument(
+      fileUrl,
+      "Please provide a concise summary of this document, highlighting the key points and main conclusions."
     );
-
-    return response.data.text;
   } catch (error) {
     console.error("Error summarizing document:", error);
     throw new Error("Failed to summarize document. Please try again.");
   }
 };
 
-// // Add a function to handle large documents
-// const processLargeDocument = async (fileUrl, promptText) => {
-//   try {
-//     // Check if fileUrl is a full URL or a relative path
-//     const fullUrl = fileUrl.startsWith("http")
-//       ? fileUrl
-//       : `${API_BASE_URL}${fileUrl}`;
-
-//     // For large documents, we'll process them differently
-//     // Use a more direct prompt without including the full document
-//     return await generateContent(
-//       `${promptText} for the document at ${fullUrl.split("/").pop()}`
-//     );
-//   } catch (error) {
-//     console.error("Error in large document processing:", error);
-//     throw new Error(
-//       "Could not process large document. Please try with a smaller file."
-//     );
-//   }
-// };
-
-// Function to explain a document
 export const explainDocument = async (fileUrl) => {
   try {
-    console.log(`Explaining document: ${fileUrl.split("/").pop()}`);
-
-    // Upload the file to get a file reference
-    const fileData = await uploadFileToGemini(fileUrl);
-
-    // Use the file reference to generate an explanation
-    const response = await axios.post(
-      `${API_BASE_URL}/api/gemini/process-file`,
-      {
-        fileUri: fileData.fileUri,
-        mimeType: fileData.mimeType,
-        prompt:
-          "Please explain this document in simple, clear terms. Break down any complex concepts, identify the main topics covered, and explain the significance of the content.",
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      }
+    return await processDocument(
+      fileUrl,
+      "Please explain this document in simple, clear terms. Break down any complex concepts, identify the main topics covered, and explain the significance of the content."
     );
-
-    return response.data.text;
   } catch (error) {
     console.error("Error explaining document:", error);
     throw new Error("Failed to explain document. Please try again.");
   }
 };
 
-// Function to ask a question about a document
 export const askDocumentQuestion = async (fileUrl, question) => {
   try {
-    console.log(`Asking question about document: ${fileUrl.split("/").pop()}`);
-
-    // Upload the file to get a file reference
-    const fileData = await uploadFileToGemini(fileUrl);
-
-    // Use the file reference to ask a question
-    const response = await axios.post(
-      `${API_BASE_URL}/api/gemini/process-file`,
-      {
-        fileUri: fileData.fileUri,
-        mimeType: fileData.mimeType,
-        prompt: `Please answer this question about the document: ${question}`,
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      }
+    return await processDocument(
+      fileUrl,
+      `Please answer this question about the document: ${question}`
     );
-
-    return response.data.text;
   } catch (error) {
     console.error("Error asking question about document:", error);
     throw new Error("Failed to answer question. Please try again.");
   }
 };
 
-// For audio overview, we'll need to generate text first, then convert to audio
-// using a text-to-speech service (we'll need to implement this in the backend)
 export const generateAudioOverview = async (fileUrl) => {
   try {
-    console.log(
-      `Generating audio overview for document: ${fileUrl.split("/").pop()}`
+    // Generate the text summary using Gemini
+    const detailedSummary = await processDocument(
+      fileUrl,
+      "Please provide a detailed overview of this document that would be suitable for a verbal presentation. Include all key points, significant findings, methodologies, and conclusions in a well-structured format. Make it conversational but informative, as it will be read aloud."
     );
 
-    // Upload the file to get a file reference
-    const fileData = await uploadFileToGemini(fileUrl);
+    // Try using browser's built-in speech synthesis as fallback
+    // This is more reliable than depending on the server endpoint
+    try {
+      const audioResponse = await axios.post(
+        `${API_BASE_URL}/api/text-to-speech`,
+        { text: detailedSummary },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        }
+      );
 
-    // Use the file reference to generate a detailed overview
-    const textResponse = await axios.post(
-      `${API_BASE_URL}/api/gemini/process-file`,
-      {
-        fileUri: fileData.fileUri,
-        mimeType: fileData.mimeType,
-        prompt:
-          "Please provide a detailed overview of this document that would be suitable for a verbal presentation. Include all key points, significant findings, methodologies, and conclusions in a well-structured format. Make it conversational but informative, as it will be read aloud.",
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      }
-    );
-
-    const detailedSummary = textResponse.data.text;
-
-    // Convert the text to audio using the existing endpoint
-    const audioResponse = await axios.post(
-      `${API_BASE_URL}/api/text-to-speech`,
-      { text: detailedSummary },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      }
-    );
-
-    return {
-      text: detailedSummary,
-      audioUrl: audioResponse.data.audioUrl,
-    };
-  } catch (error) {
-    console.error("Error generating audio overview:", error);
-
-    if (error.response?.data?.text) {
       return {
-        text: error.response.data.text,
-        audioUrl: null,
-        error: "Text summary generated, but audio conversion failed.",
+        text: detailedSummary,
+        audioUrl: audioResponse.data.audioUrl,
+        usedBrowserSpeech: false,
+      };
+    } catch (audioError) {
+      console.log(
+        "Server audio generation failed, using browser speech synthesis:",
+        audioError
+      );
+
+      // Use the browser's built-in speech synthesis API as fallback
+      // Generate a blob URL that can be used in an audio element
+      const audioBlob = await generateAudioBlobFromText(detailedSummary);
+      const audioBlobUrl = URL.createObjectURL(audioBlob);
+
+      return {
+        text: detailedSummary,
+        audioUrl: audioBlobUrl,
+        usedBrowserSpeech: true,
       };
     }
-
+  } catch (error) {
+    console.error("Error generating audio overview:", error);
     throw new Error("Failed to generate audio overview. Please try again.");
   }
 };
 
-// // Helper function to generate a more detailed summary for audio overview
-// const generateDetailedSummary = async (fileUrl) => {
-//   try {
-//     // Get file MIME type based on URL extension
-//     const mimeType = fileUrl.toLowerCase().endsWith(".pdf")
-//       ? "application/pdf"
-//       : "application/octet-stream";
+// Helper function to generate speech using the browser's Web Speech API
+const generateAudioBlobFromText = (text) => {
+  return new Promise((resolve, reject) => {
+    // Check if browser supports speech synthesis
+    if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+      reject(new Error("Browser doesn't support speech synthesis"));
+      return;
+    }
 
-//     // Fetch file and convert to base64
-//     const fileBase64 = await fetchFileAsBase64(fileUrl);
+    // Set up audio context and processor
+    const audioContext = new (window.AudioContext ||
+      window.webkitAudioContext)();
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+    const chunks = [];
 
-//     // Call Gemini API with the document
-//     const response = await axios.post(
-//       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`,
-//       {
-//         contents: [
-//           {
-//             parts: [
-//               {
-//                 text: "Please provide a detailed overview of this document that would be suitable for a verbal presentation. Include all key points, significant findings, methodologies, and conclusions in a well-structured format. Make it conversational but informative, as it will be read aloud:",
-//               },
-//               {
-//                 inlineData: {
-//                   mimeType: mimeType,
-//                   data: fileBase64,
-//                 },
-//               },
-//             ],
-//           },
-//         ],
-//       },
-//       {
-//         headers: {
-//           "Content-Type": "application/json",
-//         },
-//       }
-//     );
+    // Create media recorder to capture audio
+    const destination = audioContext.createMediaStreamDestination();
+    const mediaRecorder = new MediaRecorder(destination.stream);
 
-//     // Extract and return the detailed summary text
-//     if (
-//       response.data &&
-//       response.data.candidates &&
-//       response.data.candidates[0] &&
-//       response.data.candidates[0].content &&
-//       response.data.candidates[0].content.parts &&
-//       response.data.candidates[0].content.parts[0]
-//     ) {
-//       return response.data.candidates[0].content.parts[0].text;
-//     }
+    mediaRecorder.ondataavailable = (event) => {
+      chunks.push(event.data);
+    };
 
-//     throw new Error("Could not generate detailed summary.");
-//   } catch (error) {
-//     console.error("Error generating detailed summary:", error);
-//     throw new Error("Failed to generate detailed summary.");
-//   }
-// };
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(chunks, { type: "audio/mp3" });
+      resolve(blob);
+      processor.disconnect();
+      audioContext.close();
+    };
+
+    // Split text into manageable chunks to prevent timeouts
+    const textChunks = chunkText(text, 200); // Split by ~200 words
+
+    let utteranceIndex = 0;
+
+    // Start recording
+    mediaRecorder.start();
+
+    // Function to process each chunk
+    const processNextChunk = () => {
+      if (utteranceIndex >= textChunks.length) {
+        // All chunks processed, stop recording
+        setTimeout(() => mediaRecorder.stop(), 1000); // Give a second for last audio to finish
+        return;
+      }
+
+      const utterance = new SpeechSynthesisUtterance(
+        textChunks[utteranceIndex]
+      );
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+
+      // Find a good voice - prefer female English voice if available
+      const voices = window.speechSynthesis.getVoices();
+      const englishVoices = voices.filter((v) => v.lang.includes("en-"));
+      if (englishVoices.length > 0) {
+        // Try to find a female voice first
+        const femaleVoice = englishVoices.find(
+          (v) => v.name.includes("Female") || v.name.includes("female")
+        );
+        utterance.voice = femaleVoice || englishVoices[0];
+      }
+
+      utterance.onend = () => {
+        utteranceIndex++;
+        processNextChunk();
+      };
+
+      window.speechSynthesis.speak(utterance);
+    };
+
+    // Initialize voices if needed and start processing
+    if (window.speechSynthesis.getVoices().length === 0) {
+      window.speechSynthesis.onvoiceschanged = () => {
+        processNextChunk();
+      };
+    } else {
+      processNextChunk();
+    }
+  });
+};
+
+// Helper function to chunk text into smaller pieces
+const chunkText = (text, wordCount) => {
+  const words = text.split(" ");
+  const chunks = [];
+
+  for (let i = 0; i < words.length; i += wordCount) {
+    chunks.push(words.slice(i, i + wordCount).join(" "));
+  }
+
+  return chunks;
+};
+
+// Keep the existing content generation function but update it
+export const generateContent = async (prompt) => {
+  try {
+    // Updated API method
+    const result = await genAI.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: prompt,
+    });
+
+    // Handle different response structures
+    if (result.response && typeof result.response.text === "function") {
+      return result.response.text();
+    } else if (result.text && typeof result.text === "function") {
+      return result.text();
+    } else if (result.candidates && result.candidates[0]?.content?.parts) {
+      // For REST API style response
+      return result.candidates[0].content.parts[0].text || "";
+    } else {
+      // If we can't find text in expected places, try to stringify the entire response
+      console.log("Unexpected response format:", result);
+      return "Response could not be processed. Check console for details.";
+    }
+  } catch (error) {
+    console.error("Error calling Gemini API:", error);
+    return "Error generating content. Please try again.";
+  }
+};
 
 export const transformText = async (text, transformType) => {
   if (!text || !text.trim()) {
