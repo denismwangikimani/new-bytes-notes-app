@@ -13,6 +13,8 @@ const textToSpeech = require("@google-cloud/text-to-speech");
 const { v4: uuidv4 } = require("uuid");
 const path = require("path");
 const fs = require("fs");
+const axios = require("axios");
+const FormData = require("form-data");
 
 // initialize express app
 const app = express();
@@ -452,48 +454,212 @@ app.delete("/api/files/:id", auth, async (req, res) => {
 app.post("/api/text-to-speech", auth, async (req, res) => {
   try {
     const { text } = req.body;
-    
+
     if (!text || text.length === 0) {
       return res.status(400).json({ message: "Text is required" });
     }
-    
+
     // Initialize the Text-to-Speech client
     const client = new textToSpeech.TextToSpeechClient({
-      keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
+      keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
     });
-    
+
     // Perform the text-to-speech request
     const [response] = await client.synthesizeSpeech({
       input: { text: text },
-      voice: { languageCode: 'en-US', ssmlGender: 'NEUTRAL' },
-      audioConfig: { audioEncoding: 'MP3' },
+      voice: { languageCode: "en-US", ssmlGender: "NEUTRAL" },
+      audioConfig: { audioEncoding: "MP3" },
     });
-    
+
     // Generate a unique filename
     const fileName = `tts-${uuidv4()}.mp3`;
     const filePath = path.join(uploadsDir, fileName);
-    
+
     // Write the audio content to file
-    fs.writeFileSync(filePath, response.audioContent, 'binary');
-    
+    fs.writeFileSync(filePath, response.audioContent, "binary");
+
     // Create a new file record in the database
     const newFile = new File({
       user: req.user.userId,
       filename: fileName,
-      contentType: 'audio/mpeg',
+      contentType: "audio/mpeg",
       size: response.audioContent.length,
       data: response.audioContent,
     });
-    
+
     await newFile.save();
-    
+
     // Return the file URL
     const audioUrl = `/api/files/${newFile._id}`;
     res.status(200).json({ audioUrl, message: "Audio generated successfully" });
-    
   } catch (error) {
     console.error("Error generating speech:", error);
     res.status(500).json({ message: "Error generating speech", error });
+  }
+});
+
+// Upload file to Gemini API
+app.post(
+  "/api/gemini/upload-file",
+  auth,
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      // Get a Gemini API key
+      const geminiApiKey = process.env.GEMINI_API_KEY;
+      if (!geminiApiKey) {
+        return res
+          .status(500)
+          .json({ message: "Gemini API key is not configured" });
+      }
+
+      // Create FormData for the Gemini File API request
+      const formData = new FormData();
+      formData.append("file", req.file.buffer, {
+        filename: req.file.originalname,
+        contentType: req.file.mimetype,
+      });
+
+      // Upload to Gemini File API
+      const geminiUploadResponse = await axios.post(
+        "https://generativelanguage.googleapis.com/v1beta/files",
+        formData,
+        {
+          headers: {
+            ...formData.getHeaders(),
+            "x-goog-api-key": geminiApiKey,
+          },
+        }
+      );
+
+      // Check if file was uploaded successfully
+      if (!geminiUploadResponse.data || !geminiUploadResponse.data.name) {
+        return res
+          .status(500)
+          .json({ message: "Failed to upload file to Gemini API" });
+      }
+
+      // Wait for the file to be processed
+      const fileName = geminiUploadResponse.data.name;
+      let fileProcessed = false;
+      let fileData = null;
+      let retries = 0;
+      const maxRetries = 10;
+
+      while (!fileProcessed && retries < maxRetries) {
+        const fileCheckResponse = await axios.get(
+          `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${geminiApiKey}`
+        );
+
+        fileData = fileCheckResponse.data;
+
+        if (fileData.state === "PROCESSED") {
+          fileProcessed = true;
+        } else if (fileData.state === "FAILED") {
+          return res
+            .status(500)
+            .json({ message: "File processing failed in Gemini API" });
+        } else {
+          // Wait 2 seconds before checking again
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          retries++;
+        }
+      }
+
+      if (!fileProcessed) {
+        return res.status(500).json({ message: "File processing timed out" });
+      }
+
+      // Return the file information
+      res.status(200).json({
+        message: "File uploaded successfully to Gemini API",
+        fileUri: fileData.uri,
+        mimeType: fileData.mimeType,
+        name: fileName,
+      });
+    } catch (error) {
+      console.error("Error uploading file to Gemini:", error);
+      res.status(500).json({
+        message: "Error uploading file to Gemini API",
+        error: error.message,
+      });
+    }
+  }
+);
+
+// Process file with Gemini API
+app.post("/api/gemini/process-file", auth, async (req, res) => {
+  try {
+    const { fileUri, mimeType, prompt } = req.body;
+
+    if (!fileUri || !mimeType || !prompt) {
+      return res.status(400).json({ message: "Missing required parameters" });
+    }
+
+    // Get a Gemini API key
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) {
+      return res
+        .status(500)
+        .json({ message: "Gemini API key is not configured" });
+    }
+
+    // Create the file part
+    const filePart = {
+      fileData: {
+        mimeType: mimeType,
+        fileUri: fileUri,
+      },
+    };
+
+    // Process with Gemini API
+    const processResponse = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiApiKey}`,
+      {
+        contents: [
+          {
+            parts: [{ text: prompt }, filePart],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.4,
+          maxOutputTokens: 2048,
+        },
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    // Extract the response text
+    let responseText = "No response generated";
+
+    if (
+      processResponse.data &&
+      processResponse.data.candidates &&
+      processResponse.data.candidates[0] &&
+      processResponse.data.candidates[0].content &&
+      processResponse.data.candidates[0].content.parts &&
+      processResponse.data.candidates[0].content.parts[0]
+    ) {
+      responseText = processResponse.data.candidates[0].content.parts[0].text;
+    }
+
+    res.status(200).json({
+      text: responseText,
+    });
+  } catch (error) {
+    console.error("Error processing file with Gemini:", error);
+    res.status(500).json({
+      message: "Error processing file with Gemini API",
+      error: error.message,
+    });
   }
 });
 
