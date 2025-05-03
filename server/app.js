@@ -27,15 +27,32 @@ dbConnect();
 
 // Curb Cores Error by adding a header here
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  // Allow requests from both localhost and your production domain
+  const allowedOrigins = [
+    "http://localhost:3000",
+    "https://new-bytes-notes-app.onrender.com",
+  ];
+
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+
   res.setHeader(
     "Access-Control-Allow-Headers",
     "Origin, X-Requested-With, Content, Accept, Content-Type, Authorization"
   );
+
   res.setHeader(
     "Access-Control-Allow-Methods",
     "GET, POST, PUT, DELETE, PATCH, OPTIONS"
   );
+
+  // Handle preflight requests
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   next();
 });
 
@@ -546,7 +563,10 @@ app.post(
         }
       );
 
-      console.log("Successfully uploaded to Gemini:", geminiUploadResponse.data.name);
+      console.log(
+        "Successfully uploaded to Gemini:",
+        geminiUploadResponse.data.name
+      );
 
       // Check if file was uploaded successfully
       if (!geminiUploadResponse.data || !geminiUploadResponse.data.name) {

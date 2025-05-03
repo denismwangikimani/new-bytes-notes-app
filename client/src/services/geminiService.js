@@ -8,61 +8,115 @@ const API_BASE_URL = "https://new-bytes-notes-backend.onrender.com";
 // Initialize the Google GenAI client
 const genAI = new GoogleGenAI({ apiKey: API_KEY });
 
-// Function to process a document directly with Gemini using inline data
 const processDocumentInline = async (fileUrl, prompt) => {
   try {
     console.log(`Processing document inline: ${fileUrl.split("/").pop()}`);
 
-    // Fetch the file from the server
+    // Fetch the file from the server with CORS handling
     const fullUrl = fileUrl.startsWith("http")
       ? fileUrl
       : `${API_BASE_URL}${fileUrl}`;
 
-    const fileResponse = await fetch(fullUrl);
-    if (!fileResponse.ok) {
-      throw new Error(`Failed to fetch file: ${fileResponse.status}`);
-    }
-
-    // Convert to ArrayBuffer and then to base64
-    const arrayBuffer = await fileResponse.arrayBuffer();
-    const base64Data = arrayBufferToBase64(arrayBuffer);
-
-    // Determine MIME type (default to PDF if unknown)
-    const mimeType = getMimeType(fileUrl);
-
-    // Define the content for the Gemini API - using updated structure
-    const contents = [
-      { text: prompt },
-      {
-        inlineData: {
-          mimeType: mimeType,
-          data: base64Data,
+    // Try with normal fetch first
+    try {
+      const fileResponse = await fetch(fullUrl, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
         },
-      },
-    ];
+      });
 
-    // Choose the model to use - updated API method
-    const result = await genAI.models.generateContent({
-      model: "gemini-1.5-flash",
-      contents: contents,
-      generationConfig: {
-        temperature: 0.4,
-        maxOutputTokens: 2048,
-      },
-    });
+      if (!fileResponse.ok) {
+        throw new Error(`Failed to fetch file: ${fileResponse.status}`);
+      }
 
-    // Get the text from the result - handle different response structures
-    if (result.response && typeof result.response.text === "function") {
-      return result.response.text();
-    } else if (result.text && typeof result.text === "function") {
-      return result.text();
-    } else if (result.candidates && result.candidates[0]?.content?.parts) {
-      // For REST API style response
-      return result.candidates[0].content.parts[0].text || "";
-    } else {
-      // If we can't find text in expected places, try to stringify the entire response
-      console.log("Unexpected response format:", result);
-      return JSON.stringify(result);
+      // Continue with processing if fetch is successful
+      const arrayBuffer = await fileResponse.arrayBuffer();
+      const base64Data = arrayBufferToBase64(arrayBuffer);
+      const mimeType = getMimeType(fileUrl);
+
+      // Rest of your processing code...
+      const contents = [
+        { text: prompt },
+        {
+          inlineData: {
+            mimeType: mimeType,
+            data: base64Data,
+          },
+        },
+      ];
+
+      // Process with Gemini API...
+      const result = await genAI.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: contents,
+        generationConfig: {
+          temperature: 0.4,
+          maxOutputTokens: 2048,
+        },
+      });
+
+      // Extract text from response...
+      if (result.response && typeof result.response.text === "function") {
+        return result.response.text();
+      } else if (result.text && typeof result.text === "function") {
+        return result.text();
+      } else if (result.candidates && result.candidates[0]?.content?.parts) {
+        return result.candidates[0].content.parts[0].text || "";
+      } else {
+        console.log("Unexpected response format:", result);
+        return JSON.stringify(result);
+      }
+    } catch (fetchError) {
+      // If normal fetch fails, try with a proxy or alternative approach
+      console.warn(
+        "Direct fetch failed, trying alternative method:",
+        fetchError
+      );
+
+      // Try to use a proxy or fallback method
+      // Option 1: Use a CORS proxy (example only - you should use a reliable proxy)
+      // const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(fullUrl)}`;
+
+      // Option 2: In development environment, you can tell the user about the CORS issue
+      if (window.location.hostname === "localhost") {
+        return `Sorry, I can't access the file directly due to CORS restrictions. 
+
+This is a development issue that occurs when running on localhost. In production, this should work normally.
+
+You can fix this by:
+1. Making sure your server has proper CORS headers
+2. Using a CORS proxy for development
+3. Testing in the production environment where CORS is correctly configured`;
+      }
+
+      // Option 3: Fall back to a simplified prompt without the document
+      const simplifiedResult = await genAI.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: [
+          {
+            text: `${prompt} (Note: I couldn't access the document contents due to technical limitations, but I can still provide general guidance on this topic.)`,
+          },
+        ],
+        generationConfig: {
+          temperature: 0.4,
+          maxOutputTokens: 2048,
+        },
+      });
+
+      // Extract response text
+      if (
+        simplifiedResult.response &&
+        typeof simplifiedResult.response.text === "function"
+      ) {
+        return simplifiedResult.response.text();
+      } else if (
+        simplifiedResult.candidates &&
+        simplifiedResult.candidates[0]?.content?.parts
+      ) {
+        return simplifiedResult.candidates[0].content.parts[0].text || "";
+      } else {
+        throw new Error("Failed to process document");
+      }
     }
   } catch (error) {
     console.error("Error processing document inline:", error);
@@ -77,104 +131,145 @@ const processDocumentWithFilesAPI = async (fileUrl, prompt) => {
       `Processing document with Files API: ${fileUrl.split("/").pop()}`
     );
 
-    // Fetch the file from the server
+    // Fetch the file from the server with CORS handling
     const fullUrl = fileUrl.startsWith("http")
       ? fileUrl
       : `${API_BASE_URL}${fileUrl}`;
 
-    const response = await fetch(fullUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch file: ${response.status}`);
-    }
+    try {
+      const response = await fetch(fullUrl, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      });
 
-    // Convert to Blob
-    const fileBlob = await response.blob();
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file: ${response.status}`);
+      }
 
-    // Determine MIME type (default to PDF if unknown)
-    const mimeType = getMimeType(fileUrl);
+      // Continue with normal processing...
+      const fileBlob = await response.blob();
+      //const mimeType = getMimeType(fileUrl);
 
-    // Upload file using the Gemini Files API - updated API method
-    const file = await genAI.files.upload({
-      file: fileBlob,
-      config: {
-        displayName: fileUrl.split("/").pop() || "document.pdf",
-      },
-    });
+      // Upload file using the Gemini Files API - updated API method
+      const file = await genAI.files.upload({
+        file: fileBlob,
+        config: {
+          displayName: fileUrl.split("/").pop() || "document.pdf",
+        },
+      });
 
-    // Wait for file processing
-    let processedFile = file;
-    let attempts = 0;
-    const maxAttempts = 20; // Increase max attempts
+      // Wait for file processing
+      let processedFile = file;
+      let attempts = 0;
+      const maxAttempts = 20; // Increase max attempts
 
-    console.log("Initial file state:", processedFile.state);
+      console.log("Initial file state:", processedFile.state);
 
-    // Check if the file is already in a terminal state
-    if (processedFile.state === "PROCESSED") {
-      console.log("File is already processed");
-    } else {
-      // Wait for processing to complete
-      while (
-        (processedFile.state === "PROCESSING" ||
-          processedFile.state === "ACTIVE") &&
-        attempts < maxAttempts
-      ) {
-        await new Promise((resolve) => setTimeout(resolve, 3000)); // Increase wait time
-        try {
-          processedFile = await genAI.files.get({ name: processedFile.name });
-          attempts++;
-          console.log(
-            `File processing attempt ${attempts}, state: ${processedFile.state}`
-          );
-        } catch (getError) {
-          console.error("Error checking file state:", getError);
-          attempts++;
+      // Check if the file is already in a terminal state
+      if (processedFile.state === "PROCESSED") {
+        console.log("File is already processed");
+      } else {
+        // Wait for processing to complete
+        while (
+          (processedFile.state === "PROCESSING" ||
+            processedFile.state === "ACTIVE") &&
+          attempts < maxAttempts
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 3000)); // Increase wait time
+          try {
+            processedFile = await genAI.files.get({ name: processedFile.name });
+            attempts++;
+            console.log(
+              `File processing attempt ${attempts}, state: ${processedFile.state}`
+            );
+          } catch (getError) {
+            console.error("Error checking file state:", getError);
+            attempts++;
+          }
         }
       }
-    }
 
-    // Some implementations use ACTIVE as a valid state to proceed
-    if (
-      processedFile.state !== "PROCESSED" &&
-      processedFile.state !== "ACTIVE"
-    ) {
-      throw new Error(
-        `File processing failed or timed out: ${processedFile.state}`
-      );
-    }
+      // Some implementations use ACTIVE as a valid state to proceed
+      if (
+        processedFile.state !== "PROCESSED" &&
+        processedFile.state !== "ACTIVE"
+      ) {
+        throw new Error(
+          `File processing failed or timed out: ${processedFile.state}`
+        );
+      }
 
-    // Create content with the file reference - updated API method
-    const content = [{ text: prompt }];
+      // Create content with the file reference - updated API method
+      const content = [{ text: prompt }];
 
-    if (processedFile.uri && processedFile.mimeType) {
-      const { createPartFromUri } = await import("@google/genai");
-      const fileContent = createPartFromUri(
-        processedFile.uri,
-        processedFile.mimeType
-      );
-      content.push(fileContent);
-    }
+      if (processedFile.uri && processedFile.mimeType) {
+        const { createPartFromUri } = await import("@google/genai");
+        const fileContent = createPartFromUri(
+          processedFile.uri,
+          processedFile.mimeType
+        );
+        content.push(fileContent);
+      }
 
-    const result = await genAI.models.generateContent({
-      model: "gemini-1.5-flash",
-      contents: content,
-      generationConfig: {
-        temperature: 0.4,
-        maxOutputTokens: 2048,
-      },
-    });
+      const result = await genAI.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: content,
+        generationConfig: {
+          temperature: 0.4,
+          maxOutputTokens: 2048,
+        },
+      });
 
-    // Get the text from the result - handle different response structures
-    if (result.response && typeof result.response.text === "function") {
-      return result.response.text();
-    } else if (result.text && typeof result.text === "function") {
-      return result.text();
-    } else if (result.candidates && result.candidates[0]?.content?.parts) {
-      // For REST API style response
-      return result.candidates[0].content.parts[0].text || "";
-    } else {
-      // If we can't find text in expected places, try to stringify the entire response
-      console.log("Unexpected response format:", result);
-      return JSON.stringify(result);
+      // Get the text from the result - handle different response structures
+      if (result.response && typeof result.response.text === "function") {
+        return result.response.text();
+      } else if (result.text && typeof result.text === "function") {
+        return result.text();
+      } else if (result.candidates && result.candidates[0]?.content?.parts) {
+        // For REST API style response
+        return result.candidates[0].content.parts[0].text || "";
+      } else {
+        // If we can't find text in expected places, try to stringify the entire response
+        console.log("Unexpected response format:", result);
+        return JSON.stringify(result);
+      }
+    } catch (fetchError) {
+      console.warn("Direct fetch failed in Files API method:", fetchError);
+
+      // Similar fallback as in the inline method
+      if (window.location.hostname === "localhost") {
+        return `Sorry, I can't access the file directly due to CORS restrictions in development mode. The audio overview feature requires proper CORS configuration.`;
+      }
+
+      // Simplified fallback
+      const simplifiedResult = await genAI.models.generateContent({
+        model: "gemini-1.5-flash",
+        contents: [
+          {
+            text: `${prompt} (Note: I couldn't access the document contents due to technical limitations, but I can still provide general guidance.)`,
+          },
+        ],
+        generationConfig: {
+          temperature: 0.4,
+          maxOutputTokens: 2048,
+        },
+      });
+
+      // Extract response text
+      if (
+        simplifiedResult.response &&
+        typeof simplifiedResult.response.text === "function"
+      ) {
+        return simplifiedResult.response.text();
+      } else if (
+        simplifiedResult.candidates &&
+        simplifiedResult.candidates[0]?.content?.parts
+      ) {
+        return simplifiedResult.candidates[0].content.parts[0].text || "";
+      } else {
+        throw new Error("Failed to process document with Files API");
+      }
     }
   } catch (error) {
     console.error("Error processing document with Files API:", error);

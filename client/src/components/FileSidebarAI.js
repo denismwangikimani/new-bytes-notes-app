@@ -67,8 +67,15 @@ const FileSidebarAI = ({ fileUrl, fileName, fileType }) => {
     setResult("Generating detailed audio overview...");
     setAudioUrl(null);
     try {
-      const { text, audioUrl } = await generateAudioOverview(fileUrl);
-      setResult(text);
+      const { text, audioUrl, usedBrowserSpeech } = await generateAudioOverview(
+        fileUrl
+      );
+      setResult(
+        text +
+          (usedBrowserSpeech
+            ? "\n\n(Note: Using browser's built-in speech synthesis because server-based audio generation was unavailable.)"
+            : "")
+      );
       setAudioUrl(audioUrl);
     } catch (error) {
       setResult("Error: Could not generate audio overview. Please try again.");
