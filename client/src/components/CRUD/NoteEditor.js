@@ -17,8 +17,10 @@ import "./notes.css";
 
 const NoteEditor = ({ note, onUpdate, onCreate }) => {
   // Existing state variables
-  //const [content, setContent] = useState(note?.content || "");
   const [title, setTitle] = useState(note?.title || "");
+  const [content, setContent] = useState(note?.content || "");
+  const contentRef = useRef(null);
+  const lastCursorPosition = useRef(0);
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [aiResponse, setAIResponse] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -888,6 +890,38 @@ Please provide a clear, helpful answer based only on the information in the text
     }
   };
 
+  // Store cursor position before update
+  const handleContentChange = (e) => {
+    const cursorPos = e.target.selectionStart;
+    lastCursorPosition.current = cursorPos;
+    setContent(e.target.value);
+  };
+
+  // Restore cursor position after content update
+  useEffect(() => {
+    if (contentRef.current) {
+      const scrollHeight = contentRef.current.scrollHeight;
+      const clientHeight = contentRef.current.clientHeight;
+
+      // If user was near the bottom before update, keep them at the bottom
+      const isNearBottom =
+        contentRef.current.scrollTop + clientHeight > scrollHeight - 50;
+
+      if (isNearBottom) {
+        // Wait for content to update
+        setTimeout(() => {
+          contentRef.current.scrollTop = contentRef.current.scrollHeight;
+        }, 0);
+      } else {
+        // Otherwise, restore cursor position
+        contentRef.current.setSelectionRange(
+          lastCursorPosition.current,
+          lastCursorPosition.current
+        );
+      }
+    }
+  }, [content]);
+
   // Add this function to handle file viewing
   const handleViewFile = (fileUrl, fileName) => {
     setFileSidebar({
@@ -1053,12 +1087,31 @@ Please provide a clear, helpful answer based only on the information in the text
           placeholder="Note title..."
         />
 
-        {/* Always use rich text editor - Added onContextMenu handler */}
+        {/* Modified rich text editor with scrolling fix */}
         <div
           ref={richEditorRef}
           className="editor-content rich-editor"
           contentEditable
-          onInput={handleRichTextInput}
+          onInput={(e) => {
+            // Get current scroll position
+            const scrollTop = e.currentTarget.scrollTop;
+            const scrollHeight = e.currentTarget.scrollHeight;
+            const clientHeight = e.currentTarget.clientHeight;
+            const isNearBottom = scrollTop + clientHeight > scrollHeight - 50;
+
+            // Normal rich text input handling
+            handleRichTextInput(e);
+
+            // Restore scroll position after component updates
+            if (isNearBottom) {
+              setTimeout(() => {
+                if (richEditorRef.current) {
+                  richEditorRef.current.scrollTop =
+                    richEditorRef.current.scrollHeight;
+                }
+              }, 0);
+            }
+          }}
           onSelect={handleRichTextSelection}
           onClick={handleEditorClick}
           onContextMenu={handleMediaContextMenu}

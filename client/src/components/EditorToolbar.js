@@ -27,13 +27,17 @@ import {
 import "./EditorToolbar.css";
 import MediaDialog from "./MediaDialog";
 
-const EditorToolbar = ({ onFormatText }) => {
+const EditorToolbar = ({ onFormatText, editor, savedStatus }) => {
   const [showAllTools, setShowAllTools] = useState(false);
   const [showFontFamilyMenu, setShowFontFamilyMenu] = useState(false); // Renamed from showFontMenu
   const [showFontSizeMenu, setShowFontSizeMenu] = useState(false); // New state for font size menu
   const [showHeadingMenu, setShowHeadingMenu] = useState(false);
   const [textColor, setTextColor] = useState("#000000");
   const [bgColor, setBgColor] = useState("#ffffff");
+
+  // State for keyboard visibility
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
 
   // State for media dialog
   const [showMediaDialog, setShowMediaDialog] = useState(false);
@@ -138,6 +142,31 @@ const EditorToolbar = ({ onFormatText }) => {
       onFormatText("backgroundColor", color);
     }
   };
+
+  // Detect keyboard on mobile touch devices only
+  useEffect(() => {
+    // Only run this on touch screens
+    const isTouchDevice =
+      "ontouchstart" in window || navigator.maxTouchPoints > 0;
+
+    const detectKeyboard = () => {
+      if (!isTouchDevice) return;
+
+      // If the viewport height decreased significantly, keyboard is likely visible
+      const newViewportHeight = window.innerHeight;
+      if (viewportHeight - newViewportHeight > 150) {
+        setIsKeyboardVisible(true);
+      } else {
+        setIsKeyboardVisible(false);
+      }
+      setViewportHeight(newViewportHeight);
+    };
+
+    if (isTouchDevice) {
+      window.addEventListener("resize", detectKeyboard);
+      return () => window.removeEventListener("resize", detectKeyboard);
+    }
+  }, [viewportHeight]);
 
   // Primary tools definition with separate font family and font size
   const primaryTools = (
@@ -527,7 +556,11 @@ const EditorToolbar = ({ onFormatText }) => {
 
   // Main return statement - unchanged
   return (
-    <div className="editor-toolbar">
+    <div
+      className={`editor-toolbar ${
+        isKeyboardVisible ? "keyboard-visible" : ""
+      }`}
+    >
       <div className="toolbar-inner">
         {primaryTools}
         <div className={`secondary-tools ${showAllTools ? "expanded" : ""}`}>

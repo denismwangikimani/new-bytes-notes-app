@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { X, Maximize, Minimize } from "lucide-react";
 import FileSidebarAI from "../FileSidebarAI";
+import "./FileSidebar.css";
 
 const FileSidebar = ({ isOpen, onClose, fileUrl, fileName }) => {
   const [fileType, setFileType] = useState(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     // Try to determine file type
@@ -23,15 +25,49 @@ const FileSidebar = ({ isOpen, onClose, fileUrl, fileName }) => {
     }
   }, [fileName]);
 
+  // Set fullscreen mode when on mobile automatically
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth <= 768) {
+        setIsFullscreen(true);
+      }
+    };
+
+    handleResize(); // Check on mount
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
+  };
+
   if (!isOpen) return null;
 
   return (
-    <div className={`file-sidebar ${isOpen ? "open" : ""}`}>
+    <div
+      className={`file-sidebar ${isOpen ? "open" : ""} ${
+        isFullscreen ? "fullscreen" : ""
+      }`}
+    >
       <div className="file-sidebar-header">
         <div className="file-sidebar-title">{fileName || "File Preview"}</div>
-        <button className="file-sidebar-close" onClick={onClose}>
-          <X size={20} />
-        </button>
+        <div className="file-sidebar-controls">
+          <button
+            className="file-sidebar-toggle"
+            onClick={toggleFullscreen}
+            aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+          >
+            {isFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+          </button>
+          <button
+            className="file-sidebar-close"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
       </div>
       <div className="file-sidebar-content">
         <iframe
