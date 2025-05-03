@@ -16,6 +16,9 @@ const fs = require("fs");
 const axios = require("axios");
 const FormData = require("form-data");
 
+// Load environment variables from .env file
+require("dotenv").config();
+
 // initialize express app
 const app = express();
 
@@ -511,7 +514,9 @@ app.post(
 
       // Get a Gemini API key
       const geminiApiKey = process.env.GEMINI_API_KEY;
+      console.log("GEMINI_API_KEY loaded:", geminiApiKey ? "Yes" : "NO!!!"); // Add this line
       if (!geminiApiKey) {
+        console.error("Gemini API key is missing from environment variables"); // Added log
         return res
           .status(500)
           .json({ message: "Gemini API key is not configured" });
