@@ -62,6 +62,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     isOpen: false,
     fileUrl: "",
     fileName: "",
+    recentlyClosed: false,
   });
 
   //media dialog states
@@ -88,6 +89,10 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       "data-file-url",
       "data-filename",
       "data-file-id",
+      "autocapitalize",
+      "autocorrect",
+      "spellcheck",
+      "data-gramm",
     ],
     ADD_TAGS: ["iframe"],
   };
@@ -119,23 +124,24 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     // Get the current content from the event
     const newContent = e.currentTarget.innerHTML;
 
+    // Only update state if content has actually changed
+    if (newContent === richContent) return;
+
+    // Prevent unnecessary DOM manipulations by batching operations
     // Save current selection information before updating state
     const selection = document.getSelection();
     if (selection.rangeCount > 0) {
       const range = selection.getRangeAt(0);
 
-      // Check if this is a new line event by examining if a new block element
-      // has been created (paragraphs, divs, etc.)
+      // Check if this is a new line event or regular typing
       const isNewLineEvent = () => {
         if (!richEditorRef.current) return false;
 
-        // Check the content for new paragraphs or line breaks
         const currentBlockCount =
           richEditorRef.current.querySelectorAll("p, div, br").length;
         const hasMoreBlocksThanBefore = currentBlockCount > previousBlockCount;
 
         if (hasMoreBlocksThanBefore) {
-          // Update the block count using the state setter
           setPreviousBlockCount(currentBlockCount);
           return true;
         }
@@ -143,33 +149,33 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         return false;
       };
 
-      // Special handling for new line events
+      // Use React's state batching to reduce renders
       if (isNewLineEvent()) {
-        // For a new line, we want to set the cursor to the new node that was created
-        // We'll search for it in the effect after the render
         setEditorState({
-          container: null, // We'll find this in the effect
-          cursorPosition: 0, // Position at the start of the new line
+          container: null,
+          cursorPosition: 0,
           selectionStart: 0,
           selectionEnd: 0,
-          path: [], // We'll set this to the last element's path
-          isNewLine: true, // Flag to indicate this is after pressing Enter
+          path: [],
+          isNewLine: true,
         });
+        setRichContent(newContent);
       } else {
-        // Normal case - save the current position information
+        const path = getNodePath(range.endContainer, richEditorRef.current);
         setEditorState({
           container: range.endContainer,
           cursorPosition: range.endOffset,
           selectionStart: range.startOffset,
           selectionEnd: range.endOffset,
-          path: getNodePath(range.endContainer, richEditorRef.current),
+          path: path,
           isNewLine: false,
         });
+        setRichContent(newContent);
       }
+    } else {
+      // If no selection, just update content
+      setRichContent(newContent);
     }
-
-    // Update the content state
-    setRichContent(newContent);
   };
 
   // Add this helper function to track the path to a node
@@ -229,13 +235,11 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   useEffect(() => {
     if (!richEditorRef.current || editorState.cursorPosition === null) return;
 
-    // Wait for the DOM to update
-    setTimeout(() => {
-      const selection = document.getSelection();
-      selection.removeAllRanges();
-
+    // Use requestAnimationFrame instead of setTimeout for better performance
+    requestAnimationFrame(() => {
       try {
-        // Create a new range
+        const selection = document.getSelection();
+        selection.removeAllRanges();
         const range = document.createRange();
 
         // Special handling for a new line event
@@ -321,12 +325,12 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           }
         }
 
-        // Maintain focus on editor
-        richEditorRef.current.focus();
+        // Maintain focus on editor without causing visual jumps
+        richEditorRef.current.focus({ preventScroll: true });
       } catch (error) {
         console.log("Error restoring cursor:", error);
       }
-    }, 0);
+    });
   }, [richContent, editorState]);
 
   // Handle rich text formatting
@@ -646,29 +650,6 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     }
   };
 
-  // // Helper to check if cursor is at the end of a block
-  // const isAtEndOfBlock = (node) => {
-  //   if (node.nodeType === Node.TEXT_NODE) {
-  //     // If we're in a text node
-  //     if (node.nextSibling) return false; // Not at the end if there's a next sibling
-  //     return isAtEndOfBlock(node.parentNode); // Check parent instead
-  //   }
-
-  //   if (node.nodeType === Node.ELEMENT_NODE) {
-  //     const isBlock = getComputedStyle(node).display === "block";
-  //     if (isBlock) {
-  //       return true; // We're at a block element, so we'll consider it the end
-  //     }
-
-  //     // If not a block, check if parent is at end of its block
-  //     if (node.parentNode) {
-  //       return isAtEndOfBlock(node.parentNode);
-  //     }
-  //   }
-
-  //   return true; // Default to true if we can't determine
-  // };
-
   // Helper function to format file size
   const formatFileSize = (bytes) => {
     if (bytes < 1024) return bytes + " bytes";
@@ -891,11 +872,13 @@ Please provide a clear, helpful answer based only on the information in the text
   };
 
   // Store cursor position before update
+  // eslint-disable-next-line no-unused-vars
   const handleContentChange = (e) => {
     const cursorPos = e.target.selectionStart;
     lastCursorPosition.current = cursorPos;
     setContent(e.target.value);
   };
+  
 
   // Restore cursor position after content update
   useEffect(() => {
@@ -921,6 +904,43 @@ Please provide a clear, helpful answer based only on the information in the text
       }
     }
   }, [content]);
+
+  // Add a touchstart event handler to prevent accidental sidebar reopening
+useEffect(() => {
+  const handleTouchStart = (e) => {
+    // If we just closed the file sidebar, ignore touch events for a short period
+    if (fileSidebar.recentlyClosed) {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    }
+  };
+
+  // Add event listener to the rich editor
+  if (richEditorRef.current) {
+    richEditorRef.current.addEventListener('touchstart', handleTouchStart, { passive: false });
+  }
+
+  return () => {
+    if (richEditorRef.current) {
+      richEditorRef.current.removeEventListener('touchstart', handleTouchStart);
+    }
+  };
+}, [fileSidebar.recentlyClosed]);
+
+//close handler to set the recentlyClosed flag
+const handleCloseFileSidebar = () => {
+  setFileSidebar({ 
+    ...fileSidebar, 
+    isOpen: false, 
+    recentlyClosed: true 
+  });
+  
+  // Reset the recentlyClosed flag after a short delay
+  setTimeout(() => {
+    setFileSidebar(prev => ({ ...prev, recentlyClosed: false }));
+  }, 500);
+};
 
   // Add this function to handle file viewing
   const handleViewFile = (fileUrl, fileName) => {
@@ -1079,6 +1099,8 @@ Please provide a clear, helpful answer based only on the information in the text
     <div className={`editor-container ${!isSidebarOpen ? "full-width" : ""}`}>
       <EditorHeader onCreate={onCreate} />
       <div className="editor-content-wrapper">
+        {/* Editor toolbar is always shown */}
+        <EditorToolbar onFormatText={handleFormatText} />
         <input
           type="text"
           value={title}
@@ -1092,6 +1114,10 @@ Please provide a clear, helpful answer based only on the information in the text
           ref={richEditorRef}
           className="editor-content rich-editor"
           contentEditable
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck="false"
+          data-gramm="false"
           onInput={(e) => {
             // Get current scroll position
             const scrollTop = e.currentTarget.scrollTop;
@@ -1120,9 +1146,6 @@ Please provide a clear, helpful answer based only on the information in the text
           }}
           placeholder="Start typing your note..."
         ></div>
-
-        {/* Editor toolbar is always shown */}
-        <EditorToolbar onFormatText={handleFormatText} />
       </div>
 
       {/* AI Assistant */}
@@ -1181,7 +1204,7 @@ Please provide a clear, helpful answer based only on the information in the text
       {/* Right filebar side */}
       <FileSidebar
         isOpen={fileSidebar.isOpen}
-        onClose={() => setFileSidebar({ ...fileSidebar, isOpen: false })}
+        onClose={handleCloseFileSidebar}
         fileUrl={fileSidebar.fileUrl}
         fileName={fileSidebar.fileName}
       />

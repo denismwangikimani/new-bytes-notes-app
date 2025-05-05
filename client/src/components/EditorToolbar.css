@@ -190,37 +190,16 @@
 
 /* Mobile optimization */
 @media (max-width: 768px) {
-  .secondary-tools {
-    display: none;
-  }
-
-  .secondary-tools.expanded {
-    display: flex;
-    position: absolute;
-    bottom: 100%;
-    left: 0;
-    right: 0;
-    background-color: #f5f5f5;
-    border-top: 1px solid #e0e0e0;
-    padding: 6px 10px;
-    overflow-x: auto;
-  }
-
-  /* Only apply fixed positioning when the keyboard is visible */
-  .editor-toolbar.keyboard-visible {
-    position: fixed;
-    bottom: 260px; /* Approximate keyboard height, will be handled in JS */
-    left: 0;
-    right: 0;
-    box-shadow: 0 -2px 5px rgba(0, 0, 0, 0.1);
-  }
-  
   /* Keep normal sticky position by default, even on mobile */
   .editor-toolbar {
     position: sticky;
-    bottom: 0;
+    top: 0;
+    bottom: auto;
     z-index: 50;
-    padding-bottom: env(safe-area-inset-bottom, 0);
+    border-top: none;
+    border-bottom: 1px solid #e5e7eb;
+    background-color: white;
+    padding-top: env(safe-area-inset-top, 0);
   }
 
   .toolbar-group {

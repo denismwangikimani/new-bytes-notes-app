@@ -49,6 +49,7 @@ const FileSidebar = ({ isOpen, onClose, fileUrl, fileName }) => {
       className={`file-sidebar ${isOpen ? "open" : ""} ${
         isFullscreen ? "fullscreen" : ""
       }`}
+      onClick={(e) => e.stopPropagation()} // Prevent events from propagating to parent
     >
       <div className="file-sidebar-header">
         <div className="file-sidebar-title">{fileName || "File Preview"}</div>
