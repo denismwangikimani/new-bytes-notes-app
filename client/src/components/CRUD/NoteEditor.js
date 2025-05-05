@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import DOMPurify from "dompurify";
 import EditorHeader from "./EditorHeader";
 import { useSidebar } from "./SidebarContext";
@@ -8,22 +14,504 @@ import AskAIModal from "../AskAIModal";
 import TextSelectionToolbar from "../TextSelectionToolbar";
 import TextPreviewModal from "../TextPreviewModal";
 import EditorToolbar from "../EditorToolbar";
-import { generateContent, transformText } from "../../services/geminiService";
+import {
+  generateContent,
+  transformText,
+  //generateFlashcards,
+} from "../../services/geminiService"; // Added generateFlashcards
 import FlashcardModal from "../FlashcardModal";
 import FileSidebar from "./FileSidebar";
 import MediaContextMenu from "../MediaContextMenu";
 import MediaDialog from "../MediaDialog";
 import "./notes.css";
 
+// Slate imports
+import {
+  createEditor,
+  //Descendant,
+  Editor,
+  Transforms,
+  Element as SlateElement,
+  Text,
+  Range,
+  Node,
+  //Path, // Added Path
+} from "slate";
+import {
+  Slate,
+  Editable,
+  withReact,
+  ReactEditor, // Added ReactEditor
+  //useSlateStatic, // Added useSlateStatic for renderElement/Leaf if needed
+  DefaultElement, // Added DefaultElement
+} from "slate-react";
+import { withHistory } from "slate-history";
+import isHotkey from "is-hotkey";
+import escapeHtml from "escape-html"; // Need to install: npm install escape-html
+//import { jsx } from "slate-hyperscript"; // For deserialization
+
+// --- HTML Deserialization/Serialization (Outside Component) ---
+
+const ELEMENT_TAGS = {
+  A: (el) => ({
+    type: "link",
+    url: el.getAttribute("href"),
+    children: deserializeChildren(el),
+  }),
+  BLOCKQUOTE: (el) => ({
+    type: "block-quote",
+    children: deserializeChildren(el),
+  }),
+  H1: (el) => ({ type: "heading-one", children: deserializeChildren(el) }),
+  H2: (el) => ({ type: "heading-two", children: deserializeChildren(el) }),
+  H3: (el) => ({ type: "heading-three", children: deserializeChildren(el) }),
+  // Add H4, H5, H6 if needed
+  IMG: (el) => {
+    const url = el.getAttribute("src");
+    const fileId = el.parentElement?.getAttribute("data-file-id"); // Get fileId from parent div
+    return { type: "image", url, fileId, children: [{ text: "" }] }; // isVoid is implicit for image type now
+  },
+  VIDEO: (el) => {
+    const url = el.getAttribute("src");
+    const fileId = el.parentElement?.getAttribute("data-file-id"); // Get fileId from parent div
+    return { type: "video", url, fileId, children: [{ text: "" }] }; // isVoid is implicit for video type
+  },
+  LI: (el) => ({ type: "list-item", children: deserializeChildren(el) }),
+  OL: (el) => ({ type: "numbered-list", children: deserializeChildren(el) }),
+  P: (el) => ({ type: "paragraph", children: deserializeChildren(el) }),
+  PRE: (el) => ({ type: "code", children: deserializeChildren(el) }), // Assuming PRE contains code text directly or within CODE
+  UL: (el) => ({ type: "bulleted-list", children: deserializeChildren(el) }),
+  DIV: (el) => {
+    // Handle custom divs for files
+    if (el.classList.contains("file-container")) {
+      const url = el.getAttribute("data-file-url");
+      const filename = el.getAttribute("data-filename");
+      const fileId = el.getAttribute("data-file-id");
+      const sizeStr = el.querySelector(".file-size")?.textContent || "0 bytes";
+      // Basic parsing for size, might need refinement
+      let size = 0;
+      if (sizeStr.includes("KB")) size = parseFloat(sizeStr) * 1024;
+      else if (sizeStr.includes("MB")) size = parseFloat(sizeStr) * 1024 * 1024;
+      else size = parseInt(sizeStr);
+
+      return {
+        type: "file",
+        url,
+        filename,
+        size,
+        fileId,
+        children: [{ text: "" }],
+      }; // isVoid is implicit
+    }
+    // Handle other divs, maybe treat as paragraphs or ignore?
+    return { type: "paragraph", children: deserializeChildren(el) };
+  },
+  // Add other block elements as needed (TABLE, TR, TD, etc.)
+};
+
+const TEXT_TAGS = {
+  CODE: () => ({ code: true }),
+  DEL: () => ({ strikethrough: true }),
+  EM: () => ({ italic: true }),
+  I: () => ({ italic: true }),
+  S: () => ({ strikethrough: true }),
+  STRONG: () => ({ bold: true }),
+  U: () => ({ underline: true }),
+  SPAN: (el) => {
+    // Handle styles from spans
+    const style = el.getAttribute("style") || "";
+    const marks = {};
+    const colorMatch = style.match(/color:\s*([^;]+);?/);
+    const bgColorMatch = style.match(/background-color:\s*([^;]+);?/);
+    const fontStyleMatch = style.match(/font-style:\s*italic;?/); // Handle italic via style
+    const fontWeightMatch = style.match(/font-weight:\s*bold;?/); // Handle bold via style
+    const textDecorationMatch = style.match(/text-decoration:\s*underline;?/); // Handle underline via style
+    const textDecorationLineThroughMatch = style.match(
+      /text-decoration:\s*line-through;?/
+    ); // Handle strikethrough via style
+    const fontFamilyMatch = style.match(/font-family:\s*([^;]+);?/);
+    const fontSizeMatch = style.match(/font-size:\s*([^;]+);?/);
+
+    if (colorMatch) marks.textColor = colorMatch[1].trim();
+    if (bgColorMatch) marks.backgroundColor = bgColorMatch[1].trim();
+    if (fontStyleMatch) marks.italic = true;
+    if (fontWeightMatch) marks.bold = true;
+    if (textDecorationMatch) marks.underline = true;
+    if (textDecorationLineThroughMatch) marks.strikethrough = true;
+    if (fontFamilyMatch)
+      marks.fontFamily = fontFamilyMatch[1].replace(/['"]/g, "").trim(); // Remove quotes
+    if (fontSizeMatch) marks.fontSize = fontSizeMatch[1].trim();
+
+    return marks;
+  },
+};
+
+const deserializeChildren = (parent) => {
+  return Array.from(parent.childNodes)
+    .map((node) => deserializeNode(node))
+    .flat()
+    .filter((node) => node !== null);
+};
+
+const deserializeNode = (el) => {
+  if (el.nodeType === 3) {
+    // TEXT_NODE
+    const text = el.textContent;
+    // If text node is just whitespace and adjacent to block elements, ignore it (or keep if needed)
+    if (
+      !text.trim() &&
+      (el.previousSibling?.nodeType === 1 || el.nextSibling?.nodeType === 1)
+    ) {
+      // return null; // Option: Ignore pure whitespace between blocks
+    }
+    // ALWAYS return a Text node object
+    return { text: text || "" }; // Ensure text property exists even if empty
+  } else if (el.nodeType === 1) {
+    // ELEMENT_NODE
+    const { nodeName } = el;
+
+    // Handle void elements like BR - treat as newline text? Or handle differently?
+    if (nodeName === "BR") {
+      // Option 1: Treat as newline character within text (might not work well across blocks)
+      // return '\n';
+      // Option 2: Ignore BR if Slate handles block spacing automatically (often preferred)
+      return null;
+    }
+
+    // Handle elements needing specific structure (like lists wrapping LIs)
+    // This basic deserializer assumes direct mapping. Complex structures might need pre-processing.
+
+    let children = deserializeChildren(el);
+
+    // If an element has no children or only empty/whitespace text, ensure it has at least one empty text node
+    // This is important for Slate's model, especially for block elements.
+    if (
+      children.length === 0 ||
+      children.every((c) => typeof c === "string" && !c.trim())
+    ) {
+      children = [{ text: "" }];
+    }
+
+    const elementFn = ELEMENT_TAGS[nodeName];
+    if (elementFn) {
+      const node = elementFn(el);
+      // Ensure the returned node has children if it's not a void element type we define
+      if (!["image", "video", "file"].includes(node.type) && !node.children) {
+        node.children = children;
+      }
+      // Apply alignment from style attribute if present
+      const textAlign = el.style.textAlign;
+      if (
+        textAlign &&
+        ["left", "center", "right", "justify"].includes(textAlign)
+      ) {
+        node.align = textAlign;
+      }
+      return node;
+    }
+
+    const markFn = TEXT_TAGS[nodeName];
+    if (markFn) {
+      const marks = markFn(el);
+      // Apply marks to children, merging recursively
+      return children.map((child) => {
+        // Ensure child is a valid Slate Node (Text or Inline Element) before merging
+        if (Text.isText(child)) {
+          // Merge marks: new marks overwrite existing ones if keys conflict.
+          return { ...child, ...marks };
+        } else if (
+          SlateElement.isElement(child) /* && editor.isInline(child) */
+        ) {
+          // If you allow marks on inline elements, handle that here. Usually marks are on Text.
+          // For simplicity, let's assume marks only apply to Text nodes.
+          // If child is an inline element, return it as is or handle its children recursively?
+          // The current .flat() in deserializeChildren might handle nested inlines.
+          return child; // Return inline elements without applying text marks directly
+        }
+        // This case should ideally not be hit if children are properly deserialized
+        console.warn("Unexpected child type during mark application:", child);
+        return child;
+      });
+    }
+
+    // Default fallback: If it's an unknown block element, treat as paragraph. If inline, just return children.
+    // This requires knowing which HTML tags are block vs inline.
+    // Simple approach: If it contains block children, return children. Otherwise wrap in paragraph.
+    const containsBlockChild = children.some(
+      (child) =>
+        typeof child === "object" &&
+        child !== null &&
+        !Text.isText(child) &&
+        Editor.isBlock({ type: "paragraph", children: [] }, child)
+    ); // Use dummy editor for isBlock check
+    if (containsBlockChild) {
+      return children; // Pass children up if it contains blocks
+    } else {
+      // Treat as paragraph if it's a block-level tag we don't recognize, otherwise return children (inline)
+      // This is tricky. A safer default might be to always wrap unknown tags in a paragraph.
+      // Let's try wrapping unknown element nodes in paragraph for simplicity.
+      console.warn(
+        "Unknown HTML tag encountered during deserialization:",
+        nodeName
+      );
+      return { type: "paragraph", children: children };
+    }
+  }
+
+  return null; // Ignore other node types (comments, etc.)
+};
+
+// Initial purify config - keep for sanitizing input HTML
+const purifyConfig = {
+  ADD_ATTR: [
+    "target",
+    "contenteditable",
+    "data-file-url",
+    "data-filename",
+    "data-file-id",
+    "autocapitalize",
+    "autocorrect",
+    "spellcheck",
+    "data-gramm",
+    "style", // Allow style for alignment, colors, etc.
+  ],
+  ADD_TAGS: ["iframe", "div", "span", "video", "source"], // Allow div, span, video
+  USE_PROFILES: { html: true }, // Use standard HTML profile
+  // FORBID_TAGS: [], // Be specific about what NOT to allow if needed
+  // FORBID_ATTR: [],
+  ALLOW_DATA_ATTR: true, // Allow data-* attributes
+  // Consider allowing specific style properties if needed, though Slate handles most formatting
+};
+
+const deserialize = (htmlString) => {
+  if (!htmlString || !htmlString.trim()) {
+    return [{ type: "paragraph", children: [{ text: "" }] }];
+  }
+
+  // 1. Sanitize the HTML string FIRST
+  const sanitizedHtml = DOMPurify.sanitize(htmlString, purifyConfig);
+
+  // 2. Parse the sanitized HTML
+  const parsed = new DOMParser().parseFromString(sanitizedHtml, "text/html");
+  const body = parsed.body;
+
+  // If body is empty after sanitization, return default
+  if (
+    !body ||
+    (!body.textContent?.trim() &&
+      !body.querySelector("img, video, div.file-container"))
+  ) {
+    // Check for media too
+    return [{ type: "paragraph", children: [{ text: "" }] }];
+  }
+
+  // 3. Deserialize the DOM body into Slate nodes
+  const slateNodes = deserializeChildren(body);
+
+  // 4. Ensure the top level consists of block nodes. Wrap stray text/inline nodes.
+  const ensureBlocks = (nodes) => {
+    const wrappedNodes = [];
+    let currentParagraph = null;
+    const dummyEditor = createEditor(); // Create a temporary editor for isInline check
+
+    for (const node of nodes) {
+      if (node === null) continue; // Skip null nodes from deserialization
+
+      const isInlineNode =
+        typeof node === "string" ||
+        Text.isText(node) ||
+        (SlateElement.isElement(node) && dummyEditor.isInline(node));
+
+      if (isInlineNode) {
+        if (!currentParagraph) {
+          currentParagraph = { type: "paragraph", children: [] };
+        }
+        // Ensure the pushed node is a valid Text node
+        if (typeof node === "string") {
+          currentParagraph.children.push({ text: node }); // Wrap string
+        } else if (Text.isText(node)) {
+          currentParagraph.children.push(node); // Already a Text node
+        } else if (SlateElement.isElement(node) && dummyEditor.isInline(node)) {
+          // Handle inline elements if necessary, though deserializeNode should handle marks
+          // This might need adjustment based on how inline elements like links are handled
+          currentParagraph.children.push(node);
+        }
+      } else {
+        // It's a block node
+        if (currentParagraph) {
+          // Ensure paragraph has non-empty children or a single empty text node
+          if (
+            currentParagraph.children.length === 0 ||
+            currentParagraph.children.every(
+              (c) => Text.isText(c) && !c.text.trim()
+            )
+          ) {
+            currentParagraph.children = [{ text: "" }];
+          }
+          wrappedNodes.push(currentParagraph);
+          currentParagraph = null;
+        }
+        // Ensure block node has valid children structure
+        if (SlateElement.isElement(node) && node.children.length === 0) {
+          node.children = [{ text: "" }];
+        }
+        wrappedNodes.push(node);
+      }
+    }
+    // Add any trailing paragraph
+    if (currentParagraph) {
+      if (
+        currentParagraph.children.length === 0 ||
+        currentParagraph.children.every((c) => Text.isText(c) && !c.text.trim())
+      ) {
+        currentParagraph.children = [{ text: "" }];
+      }
+      wrappedNodes.push(currentParagraph);
+    }
+    // Ensure the final result is not empty
+    return wrappedNodes.length > 0
+      ? wrappedNodes
+      : [{ type: "paragraph", children: [{ text: "" }] }];
+  };
+
+  const finalNodes = ensureBlocks(slateNodes);
+  // console.log("Deserialized:", JSON.stringify(finalNodes, null, 2)); // DEBUG
+  return finalNodes;
+};
+
+// Serialize Slate JSON back to HTML (Example - needs refinement for styles, classes, etc.)
+const serializeNode = (node) => {
+  if (Text.isText(node)) {
+    let string = escapeHtml(node.text);
+    // Apply marks - order might matter for nesting (e.g., bold inside italic)
+    if (node.code) string = `<code>${string}</code>`;
+    if (node.italic) string = `<em>${string}</em>`;
+    if (node.underline) string = `<u>${string}</u>`;
+    if (node.strikethrough) string = `<s>${string}</s>`;
+    if (node.bold) string = `<strong>${string}</strong>`;
+
+    // Apply style marks as spans
+    const styles = {};
+    if (node.fontFamily) styles["font-family"] = node.fontFamily;
+    if (node.fontSize) styles["font-size"] = node.fontSize;
+    if (node.textColor) styles.color = node.textColor;
+    if (node.backgroundColor) styles["background-color"] = node.backgroundColor;
+
+    if (Object.keys(styles).length > 0) {
+      const styleString = Object.entries(styles)
+        .map(([k, v]) => `${k}: ${v};`)
+        .join(" ");
+      string = `<span style="${styleString}">${string}</span>`;
+    }
+
+    return string;
+  }
+
+  // It's an element node
+  const children = node.children.map((n) => serializeNode(n)).join("");
+
+  // Handle alignment style
+  const style = node.align ? ` style="text-align: ${node.align};"` : "";
+
+  switch (node.type) {
+    case "paragraph":
+      return `<p${style}>${children || "&nbsp;"}</p>`; // Use &nbsp; for empty paragraphs? Or let CSS handle height.
+    case "heading-one":
+      return `<h1${style}>${children}</h1>`;
+    case "heading-two":
+      return `<h2${style}>${children}</h2>`;
+    case "heading-three":
+      return `<h3${style}>${children}</h3>`;
+    // Add H4, H5, H6 if needed
+    case "list-item":
+      return `<li${style}>${children}</li>`;
+    case "numbered-list":
+      return `<ol${style}>${children}</ol>`;
+    case "bulleted-list":
+      return `<ul${style}>${children}</ul>`;
+    case "block-quote":
+      return `<blockquote${style}>${children}</blockquote>`;
+    case "code": // Code block
+      return `<pre${style}><code>${children}</code></pre>`;
+    case "link":
+      return `<a href="${escapeHtml(
+        node.url
+      )}" target="_blank" rel="noopener noreferrer">${children}</a>`;
+    case "image":
+      // Wrap in div like the original structure for consistency and fileId
+      return `<div class="media-container image-container" contenteditable="false" data-file-id="${
+        node.fileId || ""
+      }"><img src="${escapeHtml(
+        node.url
+      )}" alt="" style="max-width: 100%;" /></div>`;
+    case "video":
+      // Wrap in div
+      return `<div class="media-container video-container" contenteditable="false" data-file-id="${
+        node.fileId || ""
+      }"><video controls src="${escapeHtml(
+        node.url
+      )}" style="max-width: 100%;"></video></div>`;
+    case "file":
+      // Recreate the file preview structure
+      return `
+        <div class="media-container file-container" contenteditable="false" data-file-url="${escapeHtml(
+          node.url || ""
+        )}" data-filename="${escapeHtml(node.filename || "")}" data-file-id="${
+        node.fileId || ""
+      }">
+          <div class="file-preview">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div class="file-info">
+              <span class="file-name" data-file-url="${escapeHtml(
+                node.url || ""
+              )}" data-filename="${escapeHtml(
+        node.filename || ""
+      )}">${escapeHtml(node.filename || "File")}</span>
+              <span class="file-size">${formatFileSize(node.size || 0)}</span>
+              <button class="view-file-button" data-file-url="${escapeHtml(
+                node.url || ""
+              )}" data-filename="${escapeHtml(
+        node.filename || ""
+      )}" type="button">View</button>
+            </div>
+          </div>
+        </div>`;
+    default:
+      // Default to just rendering children for unknown types
+      return children;
+  }
+};
+
+const serialize = (value) => {
+  // Ensure value is an array
+  if (!Array.isArray(value)) {
+    console.error("Invalid Slate value for serialization:", value);
+    return "";
+  }
+  return value.map((n) => serializeNode(n)).join("");
+};
+
+// Helper function to format file size (keep outside or move inside if preferred)
+const formatFileSize = (bytes) => {
+  if (bytes < 1024) return bytes + " bytes";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+};
+
+// --- NoteEditor Component ---
+
 const NoteEditor = ({ note, onUpdate, onCreate }) => {
-  // Existing state variables
+  // --- Existing state variables ---
   const [title, setTitle] = useState(note?.title || "");
-  const [content, setContent] = useState(note?.content || "");
-  const contentRef = useRef(null);
-  const lastCursorPosition = useRef(0);
+  // const [content, setContent] = useState(note?.content || ""); // REMOVED - Replaced by slateValue
+  // const contentRef = useRef(null); // REMOVED - Not needed for Slate's Editable
+  // const lastCursorPosition = useRef(0); // REMOVED - Slate handles cursor
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [aiResponse, setAIResponse] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // General loading? Or specific AI loading?
 
   // Text selection and transformation states
   const [selectionPosition, setSelectionPosition] = useState(null);
@@ -31,7 +519,6 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [transformedText, setTransformedText] = useState("");
   const [isTransformLoading, setIsTransformLoading] = useState(false);
-  //const [selectionRange, setSelectionRange] = useState({ start: 0, end: 0 });
   const [transformType, setTransformType] = useState("");
   const [isFlashcardModalOpen, setIsFlashcardModalOpen] = useState(false);
 
@@ -40,24 +527,78 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [askAIResponse, setAskAIResponse] = useState("");
   const [isAskAILoading, setIsAskAILoading] = useState(false);
 
-  // Rich text editing state - ALWAYS use rich text
-  // Remove isRichText toggle and always use rich text and rack the cursor
-  const [richContent, setRichContent] = useState(note?.content || "");
-  const [previousBlockCount, setPreviousBlockCount] = useState(0);
-  const [editorState, setEditorState] = useState({
-    container: null,
-    cursorPosition: null,
-    selectionStart: null,
-    selectionEnd: null,
-    path: [],
-    isNewLine: false,
-  });
+  // --- Slate Specific State ---
+  // Use useMemo instead so a new editor is created when the note changes
+  const editor = useMemo(() => {
+    console.log(
+      "Creating new editor instance for note:",
+      note?._id || "new note"
+    );
+    return withHistory(withReact(createEditor()));
+  }, [note?._id]); // Recreate editor when note ID changes
 
-  //const titleUpdateTimer = useRef(null);
-  const richEditorRef = useRef(null);
+  // Initial value derived from note content using deserialization
+  const initialValue = useMemo(() => {
+    const deserialized = deserialize(note?.content);
+    // Ensure deserialize ALWAYS returns a valid array, even if empty/error
+    return Array.isArray(deserialized) && deserialized.length > 0
+      ? deserialized
+      : [{ type: "paragraph", children: [{ text: "" }] }]; // Fallback default
+  }, [note?.content]); // Memoize initial value to avoid re-computing on every render
+
+  // State to hold the current Slate value (JSON) - Correct JS syntax
+  const [slateValue, setSlateValue] = useState(initialValue);
+
+  // Update useEffect for note changes
+  useEffect(() => {
+    // Create an empty default state
+    const emptyState = [{ type: "paragraph", children: [{ text: "" }] }];
+
+    console.log(
+      "Note changed to:",
+      note?._id,
+      "with content:",
+      note?.content?.substring(0, 50)
+    );
+
+    if (!note) {
+      // Handle undefined note case
+      console.log("No note provided - setting empty state");
+      setSlateValue(emptyState);
+      setTitle("");
+      return;
+    }
+
+    if (note._id) {
+      // Existing note
+      if (note.content) {
+        // Note has content - deserialize it
+        const newSlateValue = deserialize(note.content);
+        console.log(
+          "Loading existing note content:",
+          newSlateValue.length,
+          "nodes"
+        );
+        setSlateValue(newSlateValue);
+      } else {
+        // Note exists but has no content
+        console.log("Note exists but has no content - setting empty state");
+        setSlateValue(emptyState);
+      }
+      setTitle(note.title || "");
+    } else {
+      // New note - always reset to completely empty
+      console.log("Creating new note - setting empty state");
+      setSlateValue(emptyState);
+      setTitle("");
+    }
+  }, [note?._id, note?.content, note?.title]);
+
+  // --- Other State ---
   const { isSidebarOpen } = useSidebar();
+  const updateTimeoutRef = useRef(null); // For debouncing updates
 
-  //file sidebar states
+  // File sidebar states
   const [fileSidebar, setFileSidebar] = useState({
     isOpen: false,
     fileUrl: "",
@@ -65,716 +606,933 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     recentlyClosed: false,
   });
 
-  //media dialog states
+  // Media context menu states
   const [contextMenu, setContextMenu] = useState({
     show: false,
     x: 0,
     y: 0,
+    path: null, // Store Path instead of DOM element
     mediaType: null,
-    mediaElement: null,
     fileId: null,
   });
 
-  //state vars for media replacement
-  const [mediaType, setMediaType] = useState(null);
-  const [mediaElement, setMediaElement] = useState(null);
+  // State vars for media replacement
+  const [mediaTypeForDialog, setMediaTypeForDialog] = useState(null); // Renamed to avoid conflict
+  // const [mediaElement, setMediaElement] = useState(null); // REMOVED - Use path from contextMenu
   const [isReplacing, setIsReplacing] = useState(false);
   const [showMediaDialog, setShowMediaDialog] = useState(false);
 
-  //purifyConfig states
-  const purifyConfig = {
-    ADD_ATTR: [
-      "target",
-      "contenteditable",
-      "data-file-url",
-      "data-filename",
-      "data-file-id",
-      "autocapitalize",
-      "autocorrect",
-      "spellcheck",
-      "data-gramm",
-    ],
-    ADD_TAGS: ["iframe"],
-  };
-
   const API_BASE_URL = "https://new-bytes-notes-backend.onrender.com";
 
-  useEffect(() => {
-    if (note) {
-      setTitle(note.title || "");
-      // Sanitize content before setting it
-      setRichContent(note?.content ? DOMPurify.sanitize(note.content) : "");
-    }
-  }, [note]);
+  // --- Effects ---
 
+  // Debounced Auto-Save Logic using Slate value
   useEffect(() => {
-    const timer = setTimeout(() => {
+    // Clear any existing timer when slateValue or title changes
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
+
+    // Set a new timer
+    updateTimeoutRef.current = setTimeout(() => {
       if (note?._id) {
-        if (richContent !== note.content || title !== note.title) {
-          onUpdate(note._id, { title, content: richContent });
+        const currentContent = serialize(slateValue); // Serialize current state
+        // Check if title or content has actually changed from the original note prop
+        if (currentContent !== note.content || title !== note.title) {
+          console.log("Auto-saving note...");
+          onUpdate(note._id, { title, content: currentContent });
         }
       }
-    }, 5000);
+    }, 3000); // Adjust debounce time as needed (e.g., 3 seconds)
 
-    return () => clearTimeout(timer);
-  }, [richContent, title, note, onUpdate]);
-
-  // Add the new handleRichTextInput function
-  const handleRichTextInput = (e) => {
-    // Get the current content from the event
-    const newContent = e.currentTarget.innerHTML;
-
-    // Only update state if content has actually changed
-    if (newContent === richContent) return;
-
-    // Prevent unnecessary DOM manipulations by batching operations
-    // Save current selection information before updating state
-    const selection = document.getSelection();
-    if (selection.rangeCount > 0) {
-      const range = selection.getRangeAt(0);
-
-      // Check if this is a new line event or regular typing
-      const isNewLineEvent = () => {
-        if (!richEditorRef.current) return false;
-
-        const currentBlockCount =
-          richEditorRef.current.querySelectorAll("p, div, br").length;
-        const hasMoreBlocksThanBefore = currentBlockCount > previousBlockCount;
-
-        if (hasMoreBlocksThanBefore) {
-          setPreviousBlockCount(currentBlockCount);
-          return true;
-        }
-
-        return false;
-      };
-
-      // Use React's state batching to reduce renders
-      if (isNewLineEvent()) {
-        setEditorState({
-          container: null,
-          cursorPosition: 0,
-          selectionStart: 0,
-          selectionEnd: 0,
-          path: [],
-          isNewLine: true,
-        });
-        setRichContent(newContent);
-      } else {
-        const path = getNodePath(range.endContainer, richEditorRef.current);
-        setEditorState({
-          container: range.endContainer,
-          cursorPosition: range.endOffset,
-          selectionStart: range.startOffset,
-          selectionEnd: range.endOffset,
-          path: path,
-          isNewLine: false,
-        });
-        setRichContent(newContent);
+    // Cleanup function to clear timer on unmount or before next effect run
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
       }
-    } else {
-      // If no selection, just update content
-      setRichContent(newContent);
-    }
-  };
+    };
+  }, [slateValue, title, note, onUpdate, editor]); // Include editor if its state affects serialization indirectly
 
-  // Add this helper function to track the path to a node
-  const getNodePath = (node, rootNode) => {
-    if (!node || !rootNode) return [];
+  // --- Slate Helper Functions (Inside Component) ---
 
-    // If the node is the root, return empty path
-    if (node === rootNode) return [];
-
-    const path = [];
-    let currentNode = node;
-
-    // Traverse up the DOM tree until we reach the root
-    while (currentNode && currentNode !== rootNode) {
-      const parent = currentNode.parentNode;
-      if (!parent) break;
-
-      // Find the index of the current node among its siblings
-      const children = Array.from(parent.childNodes);
-      const index = children.indexOf(currentNode);
-
-      path.unshift(index);
-      currentNode = parent;
-    }
-
-    return path;
-  };
-
-  // Add missing useEffect to initialize block count
-  useEffect(() => {
-    if (richEditorRef.current) {
-      const initialBlockCount =
-        richEditorRef.current.querySelectorAll("p, div, br").length;
-      setPreviousBlockCount(initialBlockCount);
-    }
+  // --- File Sidebar ---
+  const handleViewFile = useCallback((fileUrl, fileName) => {
+    setFileSidebar({
+      isOpen: true,
+      fileUrl,
+      fileName,
+      recentlyClosed: false, // Ensure this is false when opening
+    });
   }, []);
 
-  // Find a node using the saved path
-  const findNodeByPath = (rootNode, path) => {
-    if (!rootNode || !path.length) return rootNode;
-
-    let currentNode = rootNode;
-
-    for (const index of path) {
-      if (currentNode.childNodes && index < currentNode.childNodes.length) {
-        currentNode = currentNode.childNodes[index];
-      } else {
-        // Path is invalid, return the last valid node
-        return currentNode;
-      }
-    }
-
-    return currentNode;
-  };
-
-  // Now replace the cursor restoration effect with this improved version
-  useEffect(() => {
-    if (!richEditorRef.current || editorState.cursorPosition === null) return;
-
-    // Use requestAnimationFrame instead of setTimeout for better performance
-    requestAnimationFrame(() => {
-      try {
-        const selection = document.getSelection();
-        selection.removeAllRanges();
-        const range = document.createRange();
-
-        // Special handling for a new line event
-        if (editorState.isNewLine) {
-          // Find the last block element in the editor
-          const blocks = richEditorRef.current.querySelectorAll("p, div");
-          if (blocks.length > 0) {
-            const lastBlock = blocks[blocks.length - 1];
-
-            // Position cursor at the beginning of the last block element
-            if (lastBlock.firstChild) {
-              // If the block has content, place at beginning of content
-              range.setStart(lastBlock.firstChild, 0);
-              range.setEnd(lastBlock.firstChild, 0);
-            } else {
-              // If the block is empty, place inside it
-              range.setStart(lastBlock, 0);
-              range.setEnd(lastBlock, 0);
-            }
-
-            selection.addRange(range);
-            richEditorRef.current.focus();
-            return;
-          }
-        }
-
-        // Regular case - use the saved path
-        let targetNode;
-        if (editorState.path && editorState.path.length) {
-          targetNode = findNodeByPath(richEditorRef.current, editorState.path);
-        }
-
-        // If we can't find the node by path, find the last text node
-        if (!targetNode || targetNode.nodeType !== 3) {
-          const findLastTextNode = (node) => {
-            if (!node) return null;
-
-            // If this is already a text node with content, return it
-            if (node.nodeType === 3) {
-              return node;
-            }
-
-            // Check children in reverse order (to find the last one)
-            if (node.childNodes && node.childNodes.length) {
-              for (let i = node.childNodes.length - 1; i >= 0; i--) {
-                const lastNode = findLastTextNode(node.childNodes[i]);
-                if (lastNode) return lastNode;
-              }
-            }
-
-            return null;
-          };
-
-          targetNode = findLastTextNode(richEditorRef.current);
-        }
-
-        // If we found a valid node, position the cursor
-        if (targetNode) {
-          // For text nodes, use normal positioning
-          if (targetNode.nodeType === 3) {
-            let position = Math.min(
-              editorState.cursorPosition,
-              targetNode.length
-            );
-            range.setStart(targetNode, position);
-            range.setEnd(targetNode, position);
-          }
-          // For element nodes, position inside the element
-          else {
-            range.selectNodeContents(targetNode);
-            range.collapse(false); // Move to end
-          }
-
-          selection.addRange(range);
-        }
-        // Fallback - just place at the end of the editor
-        else {
-          const lastChild = richEditorRef.current.lastChild;
-          if (lastChild) {
-            range.selectNodeContents(lastChild);
-            range.collapse(false); // Move to end
-            selection.addRange(range);
-          }
-        }
-
-        // Maintain focus on editor without causing visual jumps
-        richEditorRef.current.focus({ preventScroll: true });
-      } catch (error) {
-        console.log("Error restoring cursor:", error);
-      }
+  const handleCloseFileSidebar = () => {
+    setFileSidebar({
+      ...fileSidebar,
+      isOpen: false,
+      recentlyClosed: true,
     });
-  }, [richContent, editorState]);
-
-  // Handle rich text formatting
-  const handleFormatText = (formatType, value = null) => {
-    // Save the current selection
-    const selection = document.getSelection();
-
-    // Focus the editor before applying commands
-    richEditorRef.current.focus();
-
-    // Handle media insertions
-    if (["image", "video", "file", "link"].includes(formatType)) {
-      handleMediaInsertion(formatType, value);
-      return;
-    }
-
-    if (!selection.rangeCount) {
-      // No selection, exit early
-      return;
-    }
-
-    // Focus the editor before applying commands
-    richEditorRef.current.focus();
-
-    // Get the current range
-    const range = selection.getRangeAt(0);
-
-    // Apply styling with CSS to ensure proper styling
-    document.execCommand("styleWithCSS", false, true);
-
-    // Helper to determine if selection is an entire paragraph
-    const isEntireParagraph = () => {
-      // eslint-disable-next-line no-unused-vars
-      const parentElement =
-        range.commonAncestorContainer.nodeType === 1
-          ? range.commonAncestorContainer
-          : range.commonAncestorContainer.parentElement;
-
-      // If selection starts at beginning and ends at end of element
-      return (
-        range.startOffset === 0 &&
-        range.endOffset ===
-          (range.endContainer.nodeType === 3
-            ? range.endContainer.length
-            : range.endContainer.childNodes.length)
-      );
-    };
-
-    // For lists and alignment, we need special handling to ensure we only affect the selected text
-    if (
-      ["bulletList", "numberedList", "align"].includes(formatType.split(".")[0])
-    ) {
-      // Store the selected content
-      const fragment = range.cloneContents();
-      const tempDiv = document.createElement("div");
-      tempDiv.appendChild(fragment);
-      const selectedHtml = tempDiv.innerHTML;
-
-      // For alignment specifically
-      if (formatType === "align") {
-        // If it's whole paragraphs or block elements, apply directly
-        if (isEntireParagraph()) {
-          document.execCommand(
-            "justify" + value.charAt(0).toUpperCase() + value.slice(1),
-            false,
-            null
-          );
-        } else {
-          // For partial selections, wrap in a div with the alignment
-          const alignmentDiv = `<div style="text-align: ${value}">${selectedHtml}</div>`;
-          document.execCommand("insertHTML", false, alignmentDiv);
-        }
-      }
-      // For lists, handle specially
-      else if (formatType === "bulletList") {
-        if (isEntireParagraph()) {
-          document.execCommand("insertUnorderedList", false, null);
-        } else {
-          // For partial selections, create a list explicitly
-          const listHtml = `<ul><li>${selectedHtml}</li></ul>`;
-          document.execCommand("insertHTML", false, listHtml);
-        }
-      } else if (formatType === "numberedList") {
-        if (isEntireParagraph()) {
-          document.execCommand("insertOrderedList", false, null);
-        } else {
-          // For partial selections, create a list explicitly
-          const listHtml = `<ol><li>${selectedHtml}</li></ol>`;
-          document.execCommand("insertHTML", false, listHtml);
-        }
-      }
-    }
-    // Handle all other formatting cases
-    else {
-      switch (formatType) {
-        case "bold":
-          document.execCommand("bold", false, null);
-          break;
-        case "italic":
-          document.execCommand("italic", false, null);
-          break;
-        case "underline":
-          document.execCommand("underline", false, null);
-          break;
-        case "strikethrough":
-          document.execCommand("strikeThrough", false, null);
-          break;
-        case "fontFamily":
-          document.execCommand("fontName", false, value);
-          break;
-        case "fontSize":
-          // Convert px to pt for execCommand
-          const size = parseInt(value.replace("px", ""));
-          const pt = Math.ceil(size * 0.75); // approximation of px to pt
-          document.execCommand("fontSize", false, pt);
-          break;
-        case "textColor":
-          document.execCommand("foreColor", false, value);
-          break;
-        case "backgroundColor":
-          document.execCommand("hiliteColor", false, value);
-          break;
-        case "heading":
-          // For headings, we need to make sure it's only applied to selected content
-          if (isEntireParagraph()) {
-            document.execCommand("formatBlock", false, value);
-          } else {
-            // Wrap the selected content in the appropriate heading tag
-            const headingHtml = `<${value}>${selection.toString()}</${value}>`;
-            document.execCommand("insertHTML", false, headingHtml);
-          }
-          break;
-        case "blockquote":
-          if (isEntireParagraph()) {
-            document.execCommand("formatBlock", false, "blockquote");
-          } else {
-            const quoteHtml = `<blockquote>${selection.toString()}</blockquote>`;
-            document.execCommand("insertHTML", false, quoteHtml);
-          }
-          break;
-        case "code":
-          // Wrap selection in <code> tags
-          const codeHtml = `<code style="background-color: #f4f4f4; padding: 2px 4px; border-radius: 3px; font-family: monospace;">${selection.toString()}</code>`;
-          document.execCommand("insertHTML", false, codeHtml);
-          break;
-        default:
-          console.log("Formatting not implemented: ", formatType);
-      }
-    }
-
-    // Update rich content after applying formatting
-    if (richEditorRef.current) {
-      setRichContent(richEditorRef.current.innerHTML);
-    }
-
-    // Restore focus to the editor
-    richEditorRef.current.focus();
+    // Reset the flag after a delay
+    setTimeout(() => {
+      setFileSidebar((prev) => ({ ...prev, recentlyClosed: false }));
+    }, 500); // Adjust delay as needed
   };
 
-  // Add new function to handle media insertion
-  const handleMediaInsertion = (type, data) => {
-    if (!richEditorRef.current) return;
+  // Custom Editor Commands (can be moved to a separate file)
+  const CustomEditor = useMemo(
+    () => ({
+      // Wrap in useMemo if needed, though methods are stable
+      isMarkActive(editor, format) {
+        const marks = Editor.marks(editor);
+        return marks ? marks[format] === true : false;
+      },
 
-    // For links, insert at cursor position (keep this behavior)
-    if (type === "link") {
-      const linkText = window.getSelection().toString() || data.url;
-      const linkHtml = `<a href="${data.url}" target="_blank">${linkText}</a>`;
-      document.execCommand("insertHTML", false, linkHtml);
-    }
-    // Handling a replacement
-    else if (isReplacing && mediaElement) {
-      // Extract fileId from the URL
-      const fileId = data.url.split("/").pop();
+      toggleMark(editor, format) {
+        const isActive = CustomEditor.isMarkActive(editor, format);
+        if (isActive) {
+          Editor.removeMark(editor, format);
+        } else {
+          // Special handling for style marks (font, color) - remove others if applying one?
+          // Simple toggle for now:
+          Editor.addMark(editor, format, true);
+        }
+        ReactEditor.focus(editor); // Keep focus
+      },
 
-      // Create new HTML based on media type
-      let newHtml = "";
-      switch (type) {
+      isBlockActive(editor, format, blockType = "type") {
+        const { selection } = editor;
+        if (!selection) return false;
+        const [match] = Editor.nodes(editor, {
+          at: Editor.unhangRange(editor, selection),
+          match: (n) =>
+            !Editor.isEditor(n) &&
+            SlateElement.isElement(n) &&
+            n[blockType] === format,
+        });
+        return !!match;
+      },
+
+      toggleBlock(editor, format) {
+        const isActive = CustomEditor.isBlockActive(editor, format);
+        const isList = ["numbered-list", "bulleted-list"].includes(format);
+        const isIndentable = [
+          "paragraph",
+          "heading-one",
+          "heading-two",
+          "heading-three",
+          "block-quote",
+          "list-item",
+        ].includes(format); // Add types that can be list items
+
+        // Unwrap lists first
+        Transforms.unwrapNodes(editor, {
+          match: (n) =>
+            !Editor.isEditor(n) &&
+            SlateElement.isElement(n) &&
+            ["numbered-list", "bulleted-list"].includes(n.type),
+          split: true,
+        });
+
+        let newProperties;
+        // Determine the new type based on current state and desired format
+        if (isActive) {
+          // If it's active, turn it back into a paragraph
+          newProperties = { type: "paragraph" };
+        } else if (isList) {
+          // If turning into a list item, set type to 'list-item'
+          newProperties = { type: "list-item" };
+        } else {
+          // Otherwise, set type to the desired block format
+          newProperties = { type: format };
+        }
+
+        // Apply the new properties only to relevant block types
+        Transforms.setNodes(
+          // Remove <SlateElement>
+          editor,
+          newProperties,
+          {
+            match: (n) =>
+              SlateElement.isElement(n) &&
+              Editor.isBlock(editor, n) &&
+              isIndentable, // Apply only to block types that make sense
+          }
+        );
+
+        // If the target format is a list, wrap the nodes in the list container
+        if (!isActive && isList) {
+          const block = { type: format, children: [] };
+          Transforms.wrapNodes(editor, block, {
+            match: (n) => SlateElement.isElement(n) && n.type === "list-item", // Wrap only the list items
+          });
+        }
+        ReactEditor.focus(editor); // Keep focus
+      },
+
+      toggleAlignment(editor, alignValue) {
+        // If alignValue is the same as current, maybe remove alignment? Or just apply.
+        // Simple approach: always set the alignment.
+        Transforms.setNodes(
+          editor,
+          { align: alignValue },
+          {
+            match: (n) =>
+              SlateElement.isElement(n) && Editor.isBlock(editor, n),
+          } // Apply to block elements
+        );
+        ReactEditor.focus(editor); // Keep focus
+      },
+
+      // Add/Remove marks for styles like font family, size, color
+      setStyleMark(editor, format, value) {
+        if (editor.selection) {
+          // If selection is collapsed, apply to the typing marks
+          if (Range.isCollapsed(editor.selection)) {
+            Editor.addMark(editor, format, value);
+          } else {
+            // If text is selected, apply to the selection
+            Transforms.setNodes(
+              editor,
+              { [format]: value },
+              { match: Text.isText, split: true }
+            );
+          }
+        } else {
+          // Apply to typing marks if no selection
+          Editor.addMark(editor, format, value);
+        }
+        ReactEditor.focus(editor); // Keep focus
+      },
+      // removeStyleMark(editor, format) { // Might not be needed if toggleMark handles it
+      //     Editor.removeMark(editor, format);
+      // }
+    }),
+    [editor]
+  ); // Dependency: editor
+
+  // --- Rendering Callbacks for Slate ---
+  const renderElement = useCallback(
+    ({ attributes, children, element }) => {
+      const style = element.align ? { textAlign: element.align } : {};
+
+      // Helper to get attributes for media elements
+      const getMediaAttributes = (el) => ({
+        ...attributes,
+        contentEditable: false,
+        "data-file-id": el.fileId || "",
+        "data-file-url": el.url || "", // Needed for file type
+        "data-filename": el.filename || "", // Needed for file type
+        className: `media-container ${el.type}-container`,
+        style: {
+          // Add styles for void elements (prevents selection issues)
+          userSelect: "none",
+          // Add margin/padding if needed for spacing
+          margin: "0.5em 0",
+        },
+      });
+
+      switch (element.type) {
+        case "heading-one":
+          return (
+            <h1 {...attributes} style={style}>
+              {children}
+            </h1>
+          );
+        case "heading-two":
+          return (
+            <h2 {...attributes} style={style}>
+              {children}
+            </h2>
+          );
+        case "heading-three":
+          return (
+            <h3 {...attributes} style={style}>
+              {children}
+            </h3>
+          );
+        // Add H4, H5, H6 if needed
+        case "list-item":
+          return (
+            <li {...attributes} style={style}>
+              {children}
+            </li>
+          );
+        case "numbered-list":
+          return (
+            <ol {...attributes} style={style}>
+              {children}
+            </ol>
+          );
+        case "bulleted-list":
+          return (
+            <ul {...attributes} style={style}>
+              {children}
+            </ul>
+          );
+        case "block-quote":
+          return (
+            <blockquote {...attributes} style={style}>
+              {children}
+            </blockquote>
+          );
+        case "code": // Code block
+          return (
+            <pre {...attributes}>
+              <code style={style}>{children}</code>
+            </pre>
+          );
+        case "link":
+          return (
+            <a
+              {...attributes}
+              href={element.url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {children}
+            </a>
+          );
         case "image":
-          newHtml = `<div class="media-container image-container" contenteditable="false" data-file-id="${fileId}"><img src="${data.url}" alt="User uploaded image" style="max-width: 100%;" /></div>`;
-          break;
-        case "video":
-          newHtml = `<div class="media-container video-container" contenteditable="false" data-file-id="${fileId}"><video controls src="${data.url}" style="max-width: 100%;"></video></div>`;
-          break;
-        case "file":
-          newHtml = `
-          <div class="media-container file-container" contenteditable="false" data-file-url="${
-            data.url
-          }" data-filename="${data.filename}" data-file-id="${fileId}">
-            <div class="file-preview">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-              <div class="file-info">
-                <span class="file-name" data-file-url="${data.url}">${
-            data.filename
-          }</span>
-                <span class="file-size">${formatFileSize(data.size)}</span>
-                <button class="view-file-button" data-file-url="${
-                  data.url
-                }" data-filename="${data.filename}" type="button">View</button>
-              </div>
+          return (
+            <div {...getMediaAttributes(element)}>
+              {children} {/* Must include children for Slate void elements */}
+              <img
+                src={element.url}
+                alt=""
+                style={{ maxWidth: "100%", display: "block" }}
+              />
             </div>
-          </div>`;
-          break;
-        default:
-          break;
-      }
-
-      // Replace the old element with the new one
-      if (newHtml) {
-        const tempDiv = document.createElement("div");
-        tempDiv.innerHTML = newHtml;
-        const newElement = tempDiv.firstChild;
-        mediaElement.parentNode.replaceChild(newElement, mediaElement);
-
-        // Update rich content
-        setRichContent(richEditorRef.current.innerHTML);
-      }
-
-      // Reset replacement state
-      setIsReplacing(false);
-      setMediaElement(null);
-    }
-    // For other media types, ensure they're on their own line with proper spacing
-    else {
-      // Get selection and range
-      const selection = window.getSelection();
-      if (selection.rangeCount > 0) {
-        const range = selection.getRangeAt(0);
-
-        // Extract fileId from the URL
-        const fileId = data.url.split("/").pop();
-
-        // Create appropriate HTML based on media type
-        let mediaHtml = "";
-
-        switch (type) {
-          case "image":
-            mediaHtml = `<div class="media-container image-container" contenteditable="false" data-file-id="${fileId}"><img src="${data.url}" alt="User uploaded image" style="max-width: 100%;" /></div><p><br></p>`;
-            break;
-          case "video":
-            mediaHtml = `<div class="media-container video-container" contenteditable="false" data-file-id="${fileId}"><video controls src="${data.url}" style="max-width: 100%;"></video></div><p><br></p>`;
-            break;
-          case "file":
-            mediaHtml = `
-            <div class="media-container file-container" contenteditable="false" data-file-url="${
-              data.url
-            }" data-filename="${data.filename}" data-file-id="${fileId}">
-              <div class="file-preview">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          );
+        case "video":
+          return (
+            <div {...getMediaAttributes(element)}>
+              {children}
+              <video
+                controls
+                src={element.url}
+                style={{ maxWidth: "100%", display: "block" }}
+              />
+            </div>
+          );
+        case "file":
+          return (
+            <div {...getMediaAttributes(element)}>
+              {children}
+              <div className="file-preview">
+                {/* SVG Icon */}
+                <svg
+                  width="24"
+                  height="24"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  style={{ flexShrink: 0 }}
+                >
+                  <path
+                    d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M14 2v6h6M16 13H8M16 17H8M10 9H8"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
-                <div class="file-info">
-                  <span class="file-name" data-file-url="${data.url}">${
-              data.filename
-            }</span>
-                  <span class="file-size">${formatFileSize(data.size)}</span>
-                  <button class="view-file-button" data-file-url="${
-                    data.url
-                  }" data-filename="${
-              data.filename
-            }" type="button">View</button>
+                <div className="file-info">
+                  <span
+                    className="file-name"
+                    data-file-url={element.url}
+                    data-filename={element.filename}
+                  >
+                    {element.filename || "File"}
+                  </span>
+                  <span className="file-size">
+                    {formatFileSize(element.size || 0)}
+                  </span>
+                  <button
+                    className="view-file-button"
+                    data-file-url={element.url}
+                    data-filename={element.filename}
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault(); // Prevent Slate focus issues
+                      handleViewFile(element.url, element.filename);
+                    }}
+                  >
+                    View
+                  </button>
                 </div>
               </div>
-            </div><p><br></p>`;
-            break;
-          default:
-            return;
-        }
-
-        // Ensure we're at a block boundary (beginning or end of paragraph)
-        const currentNode = range.startContainer;
-        const isAtBlockStart = range.startOffset === 0;
-
-        // Check if we need to insert a line break before the media
-        let needsLineBreakBefore = false;
-
-        // If we're in a text node, check if we're not at the beginning of a block element
-        if (currentNode.nodeType === Node.TEXT_NODE && !isAtBlockStart) {
-          needsLineBreakBefore = true;
-        }
-
-        // Create the full HTML to insert with appropriate spacing
-        let fullHtml = "";
-
-        if (needsLineBreakBefore) {
-          fullHtml = `<p><br></p>${mediaHtml}`;
-        } else {
-          fullHtml = mediaHtml;
-        }
-
-        // Insert the HTML
-        document.execCommand("insertHTML", false, fullHtml);
-
-        // Update content state
-        setRichContent(richEditorRef.current.innerHTML);
-
-        // Set focus to the paragraph after the media element
-        setTimeout(() => {
-          const paragraphs = richEditorRef.current.querySelectorAll("p");
-          if (paragraphs.length > 0) {
-            const lastP = paragraphs[paragraphs.length - 1];
-            const range = document.createRange();
-            const sel = window.getSelection();
-
-            range.setStart(lastP, 0);
-            range.collapse(true);
-
-            sel.removeAllRanges();
-            sel.addRange(range);
-            richEditorRef.current.focus();
-          }
-        }, 0);
+            </div>
+          );
+        case "paragraph": // Explicitly handle paragraph
+          return (
+            <p {...attributes} style={style}>
+              {children}
+            </p>
+          );
+        default:
+          // Use DefaultElement for unrecognized block types or fallback
+          return (
+            <DefaultElement {...attributes} element={element} style={style}>
+              {children}
+            </DefaultElement>
+          );
       }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [handleViewFile]
+  ); // Add handleViewFile dependency
+
+  const renderLeaf = useCallback(({ attributes, children, leaf }) => {
+    let el = <>{children}</>;
+
+    // Apply standard marks
+    if (leaf.bold) el = <strong>{el}</strong>;
+    if (leaf.italic) el = <em>{el}</em>;
+    if (leaf.underline) el = <u>{el}</u>;
+    if (leaf.strikethrough) el = <s>{el}</s>;
+    if (leaf.code) el = <code>{el}</code>;
+
+    // Apply style marks via inline styles
+    const styles = {};
+    if (leaf.fontFamily) styles.fontFamily = leaf.fontFamily;
+    if (leaf.fontSize) styles.fontSize = leaf.fontSize;
+    if (leaf.textColor) styles.color = leaf.textColor;
+    if (leaf.backgroundColor) styles.backgroundColor = leaf.backgroundColor;
+
+    if (Object.keys(styles).length > 0) {
+      el = <span style={styles}>{el}</span>;
+    }
+
+    return <span {...attributes}>{el}</span>; // Always wrap in span with attributes
+  }, []);
+
+  // --- Event Handlers ---
+
+  // Handle Toolbar Actions
+  const handleFormatText = (formatType, value = null) => {
+    // Media insertion is handled by EditorToolbar opening MediaDialog
+    if (["image", "video", "file", "link"].includes(formatType)) {
+      // If it's a link, we might want to prompt for URL here or use a specific link button logic
+      if (formatType === "link") {
+        const url = window.prompt("Enter the URL of the link:");
+        if (url) {
+          insertLink(editor, url);
+        }
+      } else {
+        // For other media, open the dialog
+        setMediaTypeForDialog(formatType); // Use the renamed state
+        setShowMediaDialog(true);
+      }
+      return;
+    }
+
+    // Apply formatting using CustomEditor commands
+    switch (formatType) {
+      // Marks
+      case "bold":
+      case "italic":
+      case "underline":
+      case "strikethrough":
+      case "code": // Inline code
+        CustomEditor.toggleMark(editor, formatType);
+        break;
+
+      // Blocks
+      case "heading": // value should be 'h1', 'h2', etc.
+        const headingMap = {
+          h1: "heading-one",
+          h2: "heading-two",
+          h3: "heading-three",
+        };
+        CustomEditor.toggleBlock(editor, headingMap[value] || "paragraph");
+        break;
+      case "blockquote":
+        CustomEditor.toggleBlock(editor, "block-quote");
+        break;
+      case "bulletList":
+        CustomEditor.toggleBlock(editor, "bulleted-list");
+        break;
+      case "numberedList":
+        CustomEditor.toggleBlock(editor, "numbered-list");
+        break;
+      // case "codeBlock": // If you add a dedicated code block button
+      //   CustomEditor.toggleBlock(editor, 'code');
+      //   break;
+
+      // Styles/Properties
+      case "align": // value: 'left', 'center', 'right', 'justify'
+        CustomEditor.toggleAlignment(editor, value);
+        break;
+      case "fontFamily":
+      case "fontSize":
+      case "textColor":
+      case "backgroundColor":
+        CustomEditor.setStyleMark(editor, formatType, value);
+        break;
+
+      default:
+        console.log(
+          "Slate formatting not implemented in handleFormatText: ",
+          formatType
+        );
     }
   };
 
-  // Helper function to format file size
-  const formatFileSize = (bytes) => {
-    if (bytes < 1024) return bytes + " bytes";
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  // Handle Keyboard Shortcuts
+  const handleKeyDown = useCallback(
+    (event) => {
+      // Handle hotkeys for marks
+      for (const hotkey in HOTKEYS) {
+        if (isHotkey(hotkey, event)) {
+          event.preventDefault();
+          const mark = HOTKEYS[hotkey];
+          CustomEditor.toggleMark(editor, mark);
+          return;
+        }
+      }
+
+      // Handle other keys if needed (e.g., Enter in lists, code blocks)
+      // switch (event.key) {
+      //   case 'Enter':
+      //     // Add custom Enter logic here if necessary
+      //     break;
+      //   case 'Tab':
+      //       // Add custom Tab logic (e.g., indent list items)
+      //       event.preventDefault();
+      //       // Transforms.insertText(editor, '    '); // Basic tab
+      //       // Or handle list indentation
+      //       break;
+      // }
+    },
+    [editor, CustomEditor]
+  ); // Add dependencies
+
+  const HOTKEYS = {
+    "mod+b": "bold",
+    "mod+i": "italic",
+    "mod+u": "underline",
+    "mod+`": "code", // Inline code
   };
 
-  // AI Assistant keyboard shortcut
+  // --- Media Handling ---
+
+  // Insert Link Helper
+  const insertLink = (editor, url) => {
+    if (!url) return;
+    const { selection } = editor;
+    const link = {
+      type: "link",
+      url,
+      children: selection && Range.isExpanded(selection) ? [] : [{ text: url }], // Use selection or URL as text
+    };
+
+    if (selection) {
+      if (Range.isExpanded(selection)) {
+        Transforms.wrapNodes(editor, link, { split: true });
+        Transforms.collapse(editor, { edge: "end" });
+      } else {
+        Transforms.insertNodes(editor, link);
+      }
+    } else {
+      Transforms.insertNodes(editor, link); // Insert at end if no selection
+    }
+    ReactEditor.focus(editor);
+  };
+
+  // Insert Media (Image, Video, File) Helper
+  const insertMedia = (editor, type, data) => {
+    if (!data || !data.url) return;
+
+    const fileId = data.url.split("/").pop(); // Basic way to get potential ID
+    let newNode;
+
+    switch (type) {
+      case "image":
+        newNode = {
+          type: "image",
+          url: data.url,
+          fileId,
+          children: [{ text: "" }], // Void elements need an empty text child
+        };
+        break;
+      case "video":
+        newNode = {
+          type: "video",
+          url: data.url,
+          fileId,
+          children: [{ text: "" }], // Void elements need an empty text child
+        };
+        break;
+      case "file":
+        newNode = {
+          type: "file",
+          url: data.url,
+          filename: data.filename,
+          size: data.size,
+          fileId,
+          children: [{ text: "" }], // Void elements need an empty text child
+        };
+        break;
+      default:
+        return;
+    }
+
+    // Insert the void node
+    Transforms.insertNodes(editor, newNode);
+
+    // Optionally insert a paragraph after it for better spacing/typing experience
+    Transforms.insertNodes(editor, {
+      type: "paragraph",
+      children: [{ text: "" }],
+    });
+
+    // Ensure focus remains in the editor, potentially after the inserted element
+    ReactEditor.focus(editor);
+    // Position cursor in the newly added paragraph
+    Transforms.select(editor, Editor.end(editor, []));
+  };
+
+  // Handle Insertion from Media Dialog
+  const handleInsertFromDialog = (type, data) => {
+    if (isReplacing && contextMenu.path) {
+      // Replacing existing media
+      const path = contextMenu.path;
+      const fileId = data.url.split("/").pop();
+      let newNode;
+      switch (type) {
+        case "image":
+          newNode = {
+            type: "image",
+            url: data.url,
+            fileId,
+            children: [{ text: "" }],
+          };
+          break;
+        case "video":
+          newNode = {
+            type: "video",
+            url: data.url,
+            fileId,
+            children: [{ text: "" }],
+          };
+          break;
+        case "file":
+          newNode = {
+            type: "file",
+            url: data.url,
+            filename: data.filename,
+            size: data.size,
+            fileId,
+            children: [{ text: "" }],
+          };
+          break;
+        default:
+          return;
+      }
+      // Remove the old node and insert the new one at the same path
+      Transforms.removeNodes(editor, { at: path });
+      Transforms.insertNodes(editor, newNode, { at: path });
+
+      // TODO: Delete old file from backend if necessary (using contextMenu.fileId)
+    } else {
+      // Inserting new media
+      insertMedia(editor, type, data);
+    }
+
+    // Reset state
+    setShowMediaDialog(false);
+    setIsReplacing(false);
+    setContextMenu({
+      show: false,
+      x: 0,
+      y: 0,
+      path: null,
+      mediaType: null,
+      fileId: null,
+    });
+    ReactEditor.focus(editor);
+  };
+
+  // Handle Right-Click on Media
+  const handleMediaContextMenu = useCallback(
+    (event) => {
+      event.preventDefault();
+
+      // Get the root editor element
+      const editorRoot = ReactEditor.toDOMNode(editor, editor);
+      if (!editorRoot) return;
+
+      // Check if the clicked target is actually within the editor's content area
+      if (!editorRoot.contains(event.target)) {
+        // Click was outside the editable area, hide context menu
+        setContextMenu({
+          show: false,
+          x: 0,
+          y: 0,
+          path: null,
+          mediaType: null,
+          fileId: null,
+        });
+        return;
+      }
+
+      let path;
+      try {
+        // Try finding the path ONLY if the target is within the editor
+        path = ReactEditor.findPath(editor, event.target);
+      } catch (error) {
+        // findPath can throw if the target isn't recognized
+        console.error(
+          "Error in ReactEditor.findPath:",
+          error,
+          "Target:",
+          event.target
+        );
+        setContextMenu({
+          show: false,
+          x: 0,
+          y: 0,
+          path: null,
+          mediaType: null,
+          fileId: null,
+        });
+        return;
+      }
+
+      if (!path) {
+        setContextMenu({
+          show: false,
+          x: 0,
+          y: 0,
+          path: null,
+          mediaType: null,
+          fileId: null,
+        });
+        return;
+      }
+
+      try {
+        const [node] = Editor.node(editor, path);
+
+        if (
+          SlateElement.isElement(node) &&
+          ["image", "video", "file"].includes(node.type)
+        ) {
+          setContextMenu({
+            show: true,
+            x: event.clientX,
+            y: event.clientY,
+            path: path,
+            mediaType: node.type,
+            fileId: node.fileId,
+          });
+        } else {
+          // Clicked somewhere else inside editor, hide context menu
+          setContextMenu({
+            show: false,
+            x: 0,
+            y: 0,
+            path: null,
+            mediaType: null,
+            fileId: null,
+          });
+        }
+      } catch (error) {
+        console.error("Error finding node for context menu:", error);
+        setContextMenu({
+          show: false,
+          x: 0,
+          y: 0,
+          path: null,
+          mediaType: null,
+          fileId: null,
+        });
+      }
+    },
+    [editor] // Keep editor dependency
+  );
+
+  // Handle Delete Media from Context Menu
+  const handleDeleteMedia = useCallback(async () => {
+    if (!contextMenu.path) return;
+
+    const pathToDelete = contextMenu.path; // Capture path before resetting state
+    const fileIdToDelete = contextMenu.fileId;
+
+    // Close context menu immediately
+    setContextMenu({
+      show: false,
+      x: 0,
+      y: 0,
+      path: null,
+      mediaType: null,
+      fileId: null,
+    });
+
+    try {
+      // Remove node from Slate editor
+      Transforms.removeNodes(editor, { at: pathToDelete });
+
+      // Delete from backend (only if we have fileId)
+      if (fileIdToDelete) {
+        const token = localStorage.getItem("token");
+        if (token) {
+          await fetch(`${API_BASE_URL}/api/files/${fileIdToDelete}`, {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          console.log("Deleted media from backend:", fileIdToDelete);
+        } else {
+          console.warn("No token found, cannot delete media from backend.");
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting media:", error);
+      // Optionally show an error message to the user
+    } finally {
+      ReactEditor.focus(editor);
+    }
+  }, [editor, contextMenu.path, contextMenu.fileId, API_BASE_URL]);
+
+  // Handle Replace Media from Context Menu
+  const handleReplaceMedia = useCallback(() => {
+    if (!contextMenu.path || !contextMenu.mediaType) return;
+
+    // Keep path info, open dialog
+    setIsReplacing(true);
+    setMediaTypeForDialog(contextMenu.mediaType); // Set the type for the dialog
+    setShowMediaDialog(true);
+
+    // Context menu state is kept until replacement happens or dialog is closed
+    // No need to close context menu here, dialog closure handles reset
+  }, [contextMenu.path, contextMenu.mediaType]);
+
+  // Close context menu when clicking outside
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.ctrlKey && e.key === "/") {
-        e.preventDefault();
-        setIsAIModalOpen(true);
+    const handleClickOutside = (event) => {
+      // Check if the click is outside the context menu itself
+      if (contextMenu.show && !event.target.closest(".media-context-menu")) {
+        setContextMenu({
+          show: false,
+          x: 0,
+          y: 0,
+          path: null,
+          mediaType: null,
+          fileId: null,
+        });
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, []);
+  }, [contextMenu.show]);
 
-  // Handle AI prompt submission
+  // --- AI & Text Transformation ---
+
+  // Update selection state for toolbar
+  const handleSlateChange = (newValue) => {
+    console.log("Editor content changed:", JSON.stringify(newValue).substring(0, 100));
+    setSlateValue(newValue); // Update main state
+
+    const { selection } = editor;
+
+    if (selection && Range.isExpanded(selection)) {
+      try {
+        const domSelection = window.getSelection();
+        if (domSelection && domSelection.rangeCount > 0) {
+          const domRange = domSelection.getRangeAt(0);
+          const rect = domRange.getBoundingClientRect();
+          const editorRoot = ReactEditor.toDOMNode(editor, editor); // Get editor root DOM node
+          const editorRect = editorRoot.getBoundingClientRect();
+
+          setSelectionPosition({
+            // Position relative to the editor or viewport? Viewport is easier.
+            x: rect.left + window.scrollX + rect.width / 2,
+            y: rect.top + window.scrollY - 10, // Offset above selection
+          });
+          setSelectedText(Editor.string(editor, selection));
+        } else {
+          setSelectionPosition(null);
+        }
+      } catch (e) {
+        console.error("Error getting selection rect:", e);
+        setSelectionPosition(null);
+      }
+    } else {
+      setSelectionPosition(null);
+      setSelectedText("");
+    }
+  };
+
+  // Handle AI prompt submission (General AI Assistant)
   const handleAISubmit = async (prompt) => {
-    setIsLoading(true);
+    setIsLoading(true); // Use general loading or a specific one?
+    setAIResponse(""); // Clear previous response
     try {
       const response = await generateContent(prompt);
       setAIResponse(response);
 
-      if (richEditorRef.current) {
-        document.execCommand("insertText", false, response);
-        setRichContent(richEditorRef.current.innerHTML);
+      // Insert response into Slate editor at current selection/cursor
+      if (response) {
+        Transforms.insertText(editor, response);
       }
 
-      setTimeout(() => {
-        setIsAIModalOpen(false);
-        setAIResponse("");
-      }, 1500);
+      // Close modal after a delay? Or immediately?
+      // setTimeout(() => {
+      //   setIsAIModalOpen(false);
+      //   setAIResponse("");
+      // }, 1500);
+      setIsAIModalOpen(false); // Close immediately after insertion
     } catch (error) {
+      console.error("Error generating AI content:", error);
       setAIResponse("Error: Failed to generate content.");
+      // Maybe keep modal open to show error?
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Rich text selection handler
-  const handleRichTextSelection = () => {
-    const selection = document.getSelection();
-    if (!selection.rangeCount) {
-      setSelectionPosition(null);
-      return;
-    }
-
-    const range = selection.getRangeAt(0);
-    const text = selection.toString();
-
-    // Clear selection toolbar if no text is selected
-    if (!text.trim()) {
-      setSelectionPosition(null);
-      return;
-    }
-
-    // Get position for the toolbar based on selection
-    const rect = range.getBoundingClientRect();
-    setSelectionPosition({
-      x: rect.left + rect.width / 2,
-      y: rect.top - 10,
-    });
-
-    // Save selected text
-    setSelectedText(text);
-  };
-
-  // Accept the transformed text for rich editor
-  const handleAcceptTransformRich = () => {
-    if (richEditorRef.current) {
-      // Replace selection with transformed text
-      document.execCommand("insertText", false, transformedText);
-
-      // Update rich content
-      setRichContent(richEditorRef.current.innerHTML);
-      setIsPreviewModalOpen(false);
-
-      // Focus editor
-      richEditorRef.current.focus();
-    }
-  };
-
-  // Handle transformation options
+  // Handle transformation options from selection toolbar
   const handleTransformOption = async (option) => {
-    console.log(
-      `%c[NoteEditor DEBUG] Transform option selected: ${option}`,
-      "color: blue;"
-    );
+    if (!selectedText) return; // Should not happen if button is visible
+
+    console.log(`Transform option selected: ${option}`);
 
     if (option === "askAI") {
-      // Open the Ask AI modal
-      setIsAskAIModalOpen(true);
+      setIsAskAIModalOpen(true); // Open Ask AI modal, passing selectedText via state
+      setSelectionPosition(null); // Hide toolbar
       return;
     }
 
-    // Existing code for other options
-    console.log(
-      `%c[DEBUG] handleTransformOption START - Option: ${option}`,
-      "color: blue; font-weight: bold;"
-    );
-
-    // Hide the selection toolbar
-    setSelectionPosition(null);
-
+    // For other transformations
+    setSelectionPosition(null); // Hide toolbar
     setTransformType(option);
     setIsTransformLoading(true);
-    setIsPreviewModalOpen(true);
+    setIsPreviewModalOpen(true); // Open preview modal immediately
+    setTransformedText(""); // Clear previous transformed text
 
     try {
       const transformedContent = await transformText(selectedText, option);
       setTransformedText(transformedContent);
     } catch (error) {
-      console.error("[DEBUG] Error transforming text:", error);
+      console.error("Error transforming text:", error);
       setTransformedText("Error transforming text. Please try again.");
     } finally {
       setIsTransformLoading(false);
     }
   };
 
+  // Handle submission from Ask AI modal
   const handleAskAISubmit = async (question, context) => {
     if (!question.trim() || !context.trim()) return;
 
@@ -782,13 +1540,8 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     setAskAIResponse("");
 
     try {
-      const prompt = `I have the following text:
-"${context}"
-
-My question about this text is: ${question}
-
-Please provide a clear, helpful answer based only on the information in the text.`;
-
+      // Use the specific prompt structure for Ask AI
+      const prompt = `Based *only* on the following text:\n\n"${context}"\n\nAnswer this question: ${question}`;
       const response = await generateContent(prompt);
       setAskAIResponse(response);
     } catch (error) {
@@ -799,34 +1552,23 @@ Please provide a clear, helpful answer based only on the information in the text
     }
   };
 
-  // Accept the transformed text
+  // Accept the transformed text from preview modal
   const handleAcceptTransform = () => {
-    handleAcceptTransformRich();
+    if (editor.selection && transformedText) {
+      // Replace the original selected text with the transformed text
+      Transforms.insertText(editor, transformedText, { at: editor.selection });
+    }
+    setIsPreviewModalOpen(false);
+    ReactEditor.focus(editor);
   };
 
-  // Reject the transformed text
+  // Reject/Close the transformed text preview modal
   const handleRejectTransform = () => {
     setIsPreviewModalOpen(false);
+    ReactEditor.focus(editor); // Refocus editor
   };
 
-  // Close the selection toolbar when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (
-        selectionPosition &&
-        (!richEditorRef.current || !richEditorRef.current.contains(e.target))
-      ) {
-        setSelectionPosition(null);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [selectionPosition]);
-
-  // Get the title for the transformation preview
+  // Get title for the preview modal
   const getTransformTitle = () => {
     switch (transformType) {
       case "summarize":
@@ -842,265 +1584,72 @@ Please provide a clear, helpful answer based only on the information in the text
     }
   };
 
-  // AI Assistant handlers
+  // AI Assistant Button Handlers
   const handleActivateText = () => {
     setIsAIModalOpen(true);
   };
 
-  const handleActivateRevision = () => {
-    setIsFlashcardModalOpen(true);
-  };
-
-  // Handle clicking on media elements in the editor
-  const handleEditorClick = (e) => {
-    // Handle clicking on media elements
-    if (e.target.closest(".media-container")) {
-      // If it's a media container, prevent default text editing behavior
-      const container = e.target.closest(".media-container");
-
-      // If it's specifically a file container, maybe we want to handle click differently
-      if (container.classList.contains("file-container")) {
-        // Only handle if the click wasn't on the view button (that's handled separately)
-        if (
-          !e.target.classList.contains("view-file-button") &&
-          !e.target.classList.contains("file-name")
-        ) {
-          e.stopPropagation();
-        }
-      }
+  // Function to get plain text from Slate value
+  const getPlainText = (nodes) => {
+    if (!Array.isArray(nodes)) {
+      console.error("getPlainText received non-array:", nodes);
+      return "";
     }
-  };
-
-  // Store cursor position before update
-  // eslint-disable-next-line no-unused-vars
-  const handleContentChange = (e) => {
-    const cursorPos = e.target.selectionStart;
-    lastCursorPosition.current = cursorPos;
-    setContent(e.target.value);
-  };
-  
-
-  // Restore cursor position after content update
-  useEffect(() => {
-    if (contentRef.current) {
-      const scrollHeight = contentRef.current.scrollHeight;
-      const clientHeight = contentRef.current.clientHeight;
-
-      // If user was near the bottom before update, keep them at the bottom
-      const isNearBottom =
-        contentRef.current.scrollTop + clientHeight > scrollHeight - 50;
-
-      if (isNearBottom) {
-        // Wait for content to update
-        setTimeout(() => {
-          contentRef.current.scrollTop = contentRef.current.scrollHeight;
-        }, 0);
-      } else {
-        // Otherwise, restore cursor position
-        contentRef.current.setSelectionRange(
-          lastCursorPosition.current,
-          lastCursorPosition.current
-        );
-      }
-    }
-  }, [content]);
-
-  // Add a touchstart event handler to prevent accidental sidebar reopening
-useEffect(() => {
-  const handleTouchStart = (e) => {
-    // If we just closed the file sidebar, ignore touch events for a short period
-    if (fileSidebar.recentlyClosed) {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    }
-  };
-
-  // Add event listener to the rich editor
-  if (richEditorRef.current) {
-    richEditorRef.current.addEventListener('touchstart', handleTouchStart, { passive: false });
-  }
-
-  return () => {
-    if (richEditorRef.current) {
-      richEditorRef.current.removeEventListener('touchstart', handleTouchStart);
-    }
-  };
-}, [fileSidebar.recentlyClosed]);
-
-//close handler to set the recentlyClosed flag
-const handleCloseFileSidebar = () => {
-  setFileSidebar({ 
-    ...fileSidebar, 
-    isOpen: false, 
-    recentlyClosed: true 
-  });
-  
-  // Reset the recentlyClosed flag after a short delay
-  setTimeout(() => {
-    setFileSidebar(prev => ({ ...prev, recentlyClosed: false }));
-  }, 500);
-};
-
-  // Add this function to handle file viewing
-  const handleViewFile = (fileUrl, fileName) => {
-    setFileSidebar({
-      isOpen: true,
-      fileUrl,
-      fileName,
-    });
-  };
-
-  // Add event handler setup for file viewer buttons
-  useEffect(() => {
-    const handleFileButtonClick = (e) => {
-      // Check if the click was on a view file button
-      if (
-        e.target.classList.contains("view-file-button") ||
-        e.target.classList.contains("file-name")
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const fileUrl = e.target.getAttribute("data-file-url");
-        const fileName = e.target.getAttribute("data-filename") || "File";
-
-        if (fileUrl) {
-          handleViewFile(fileUrl, fileName);
-        }
-      }
-    };
-
-    // Store the current ref value
-    const currentEditorRef = richEditorRef.current;
-
-    // Add event listener to the editor
-    if (currentEditorRef) {
-      currentEditorRef.addEventListener("click", handleFileButtonClick);
-    }
-
-    return () => {
-      // Use the stored ref in cleanup
-      if (currentEditorRef) {
-        currentEditorRef.removeEventListener("click", handleFileButtonClick);
-      }
-    };
-  }, []); // Only re-run if the editor reference changes
-
-  // Add this function to handle right-clicks on media elements
-  const handleMediaContextMenu = (e) => {
-    e.preventDefault();
-
-    // Find the closest media container
-    const mediaContainer = e.target.closest(".media-container");
-    if (!mediaContainer) return;
-
-    // Determine media type
-    let mediaType = "unknown";
-    if (mediaContainer.classList.contains("image-container"))
-      mediaType = "image";
-    if (mediaContainer.classList.contains("video-container"))
-      mediaType = "video";
-    if (mediaContainer.classList.contains("file-container")) mediaType = "file";
-
-    // Get file ID from data-file-id attribute (we'll add this attribute to media HTML)
-    const fileId = mediaContainer.getAttribute("data-file-id");
-
-    // Show context menu
-    setContextMenu({
-      show: true,
-      x: e.pageX,
-      y: e.pageY,
-      mediaType,
-      mediaElement: mediaContainer,
-      fileId,
-    });
-  };
-
-  // Add function to delete media
-  const handleDeleteMedia = async () => {
-    if (!contextMenu.mediaElement || !contextMenu.fileId) return;
-
     try {
-      // Remove from DOM
-      contextMenu.mediaElement.remove();
-
-      // Update rich content
-      setRichContent(richEditorRef.current.innerHTML);
-
-      // Delete from backend (only if we have fileId)
-      if (contextMenu.fileId) {
-        const token = localStorage.getItem("token");
-        await fetch(`${API_BASE_URL}/api/files/${contextMenu.fileId}`, {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-      }
+      return nodes
+        .map((n) => {
+          // Add a check here: Ensure the node is valid before stringifying
+          if (!n || typeof n !== "object") {
+            console.warn("getPlainText encountered invalid node:", n);
+            return ""; // Return empty string for invalid nodes
+          }
+          // Check if it's an element missing children (common cause of the error)
+          if (SlateElement.isElement(n) && !Array.isArray(n.children)) {
+            console.warn(
+              "getPlainText encountered element node missing children:",
+              n
+            );
+            // Attempt to stringify a default child or return empty
+            return Node.string({ children: [{ text: "" }] });
+          }
+          return Node.string(n);
+        })
+        .join("\n");
     } catch (error) {
-      console.error("Error deleting media:", error);
-    } finally {
-      // Close context menu
-      setContextMenu({
-        show: false,
-        x: 0,
-        y: 0,
-        mediaType: null,
-        mediaElement: null,
-        fileId: null,
-      });
+      console.error(
+        "Error in getPlainText during Node.string:",
+        error,
+        "Nodes:",
+        nodes
+      );
+      return ""; // Return empty string on error
     }
   };
 
-  // Add function to replace media
-  const handleReplaceMedia = () => {
-    if (!contextMenu.mediaElement) return;
-
-    // Open Media Dialog with current media type
-    setMediaType(contextMenu.mediaType);
-    setMediaElement(contextMenu.mediaElement);
-    setIsReplacing(true);
-    setShowMediaDialog(true);
-
-    // Close context menu
-    setContextMenu({
-      show: false,
-      x: 0,
-      y: 0,
-      mediaType: null,
-      mediaElement: null,
-      fileId: null,
-    });
+  const handleActivateRevision = () => {
+    // Generate flashcards based on current editor content
+    setIsFlashcardModalOpen(true); // Open the modal
+    // The FlashcardModal component will fetch the content itself via prop
   };
 
-  // Close context menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (contextMenu.show && !e.target.closest(".media-context-menu")) {
-        setContextMenu({
-          show: false,
-          x: 0,
-          y: 0,
-          mediaType: null,
-          mediaElement: null,
-          fileId: null,
-        });
-      }
-    };
+  // --- Cleanup Old Refs/State/Handlers ---
+  // Removed: richEditorRef, richContent, editorState, handleRichTextInput, getNodePath, findNodeByPath,
+  // cursor restoration useEffect, old handleFormatText, old handleMediaInsertion, old handleAISubmit,
+  // old handleRichTextSelection, old handleAcceptTransformRich, handleEditorClick, handleContentChange,
+  // old useEffect for file buttons, old useEffect for AI shortcut (can be added back if needed on window)
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [contextMenu.show]);
-
+  // --- Render ---
   return (
     <div className={`editor-container ${!isSidebarOpen ? "full-width" : ""}`}>
       <EditorHeader onCreate={onCreate} />
       <div className="editor-content-wrapper">
-        {/* Editor toolbar is always shown */}
-        <EditorToolbar onFormatText={handleFormatText} />
+        <EditorToolbar
+          editor={editor} // Pass the editor instance
+          onFormatText={handleFormatText} // Pass the unified handler
+          onInsertMedia={handleInsertFromDialog}
+          // Pass state needed for button active states (optional)
+          // Example: isBoldActive={CustomEditor.isMarkActive(editor, 'bold')}
+        />
         <input
           type="text"
           value={title}
@@ -1109,75 +1658,64 @@ const handleCloseFileSidebar = () => {
           placeholder="Note title..."
         />
 
-        {/* Modified rich text editor with scrolling fix */}
-        <div
-          ref={richEditorRef}
-          className="editor-content rich-editor"
-          contentEditable
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck="false"
-          data-gramm="false"
-          onInput={(e) => {
-            // Get current scroll position
-            const scrollTop = e.currentTarget.scrollTop;
-            const scrollHeight = e.currentTarget.scrollHeight;
-            const clientHeight = e.currentTarget.clientHeight;
-            const isNearBottom = scrollTop + clientHeight > scrollHeight - 50;
-
-            // Normal rich text input handling
-            handleRichTextInput(e);
-
-            // Restore scroll position after component updates
-            if (isNearBottom) {
-              setTimeout(() => {
-                if (richEditorRef.current) {
-                  richEditorRef.current.scrollTop =
-                    richEditorRef.current.scrollHeight;
-                }
-              }, 0);
-            }
-          }}
-          onSelect={handleRichTextSelection}
-          onClick={handleEditorClick}
-          onContextMenu={handleMediaContextMenu}
-          dangerouslySetInnerHTML={{
-            __html: DOMPurify.sanitize(richContent, purifyConfig),
-          }}
-          placeholder="Start typing your note..."
-        ></div>
+        {/* --- SLATE EDITOR --- */}
+        <Slate
+           key={`note-${note?._id || "new"}-${Date.now()}`}// More aggressive remounting strategy
+          editor={editor}
+          initialValue={slateValue} 
+          value={slateValue}
+          onChange={handleSlateChange}
+        >
+          <Editable
+            className="editor-content rich-editor" // Keep existing styles
+            renderElement={renderElement}
+            renderLeaf={renderLeaf}
+            placeholder="Start typing your note..."
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false} // Use boolean false
+            data-gramm="false"
+            onKeyDown={handleKeyDown}
+            onContextMenu={handleMediaContextMenu} // Attach context menu handler
+            // Add onClick handler if needed for specific non-media interactions
+            // onClick={handleSlateClick}
+            // Add onSelect handler if specific selection logic beyond the toolbar is needed
+            // onSelect={handleSlateSelect}
+          />
+        </Slate>
+        {/* --- END SLATE EDITOR --- */}
       </div>
 
-      {/* AI Assistant */}
+      {/* AI Assistant Buttons */}
       <AIAssistant
         onActivateText={handleActivateText}
         onActivateRevision={handleActivateRevision}
       />
+
+      {/* Modals */}
       <AIModal
         isOpen={isAIModalOpen}
         onClose={() => {
           setIsAIModalOpen(false);
-          setAIResponse("");
+          setAIResponse(""); // Clear response on close
         }}
         onSubmit={handleAISubmit}
-        loading={isLoading}
+        loading={isLoading} // Use appropriate loading state
         response={aiResponse}
       />
 
-      {/* Flashcard Modal */}
       <FlashcardModal
         isOpen={isFlashcardModalOpen}
         onClose={() => setIsFlashcardModalOpen(false)}
-        noteContent={richContent}
+        // Pass function to get content, or the content itself if stable
+        noteContent={getPlainText(slateValue)} // Pass plain text content
       />
 
-      {/* Text selection toolbar */}
       <TextSelectionToolbar
         position={selectionPosition}
         onOption={handleTransformOption}
       />
 
-      {/* Text preview modal */}
       <TextPreviewModal
         isOpen={isPreviewModalOpen}
         onClose={handleRejectTransform}
@@ -1188,20 +1726,19 @@ const handleCloseFileSidebar = () => {
         title={getTransformTitle()}
       />
 
-      {/* Ask AI modal */}
       <AskAIModal
         isOpen={isAskAIModalOpen}
         onClose={() => {
           setIsAskAIModalOpen(false);
-          setAskAIResponse("");
+          setAskAIResponse(""); // Clear response
         }}
-        selectedText={selectedText}
+        selectedText={selectedText} // Pass the selected text context
         onSubmit={handleAskAISubmit}
         loading={isAskAILoading}
         response={askAIResponse}
       />
 
-      {/* Right filebar side */}
+      {/* File Sidebar */}
       <FileSidebar
         isOpen={fileSidebar.isOpen}
         onClose={handleCloseFileSidebar}
@@ -1209,7 +1746,7 @@ const handleCloseFileSidebar = () => {
         fileName={fileSidebar.fileName}
       />
 
-      {/* Media context menu - NEW */}
+      {/* Media Context Menu */}
       {contextMenu.show && (
         <MediaContextMenu
           position={{ x: contextMenu.x, y: contextMenu.y }}
@@ -1220,28 +1757,25 @@ const handleCloseFileSidebar = () => {
               show: false,
               x: 0,
               y: 0,
+              path: null,
               mediaType: null,
-              mediaElement: null,
               fileId: null,
             })
           }
         />
       )}
 
-      {/* Media Dialog for replacements - NEW */}
+      {/* Media Dialog (for Insert/Replace) */}
       {showMediaDialog && (
         <MediaDialog
-          type={mediaType}
+          type={mediaTypeForDialog} // Pass the type to insert/replace - UNCOMMENT THIS LINE
           isOpen={showMediaDialog}
           onClose={() => {
             setShowMediaDialog(false);
-            setIsReplacing(false);
-            setMediaElement(null);
+            setIsReplacing(false); // Reset replacing state on close
+            // Don't reset contextMenu here, only on action or outside click
           }}
-          onInsert={(type, data) => {
-            handleMediaInsertion(type, data);
-            setShowMediaDialog(false);
-          }}
+          onInsert={handleInsertFromDialog} // Use the combined handler
         />
       )}
     </div>

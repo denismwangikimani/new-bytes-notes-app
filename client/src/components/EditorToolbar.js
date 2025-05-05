@@ -27,7 +27,7 @@ import {
 import "./EditorToolbar.css";
 import MediaDialog from "./MediaDialog";
 
-const EditorToolbar = ({ onFormatText, editor, savedStatus }) => {
+const EditorToolbar = ({ onFormatText, editor, savedStatus, onInsertMedia }) => {
   const [showAllTools, setShowAllTools] = useState(false);
   const [showFontFamilyMenu, setShowFontFamilyMenu] = useState(false); // Renamed from showFontMenu
   const [showFontSizeMenu, setShowFontSizeMenu] = useState(false); // New state for font size menu
@@ -546,7 +546,8 @@ const EditorToolbar = ({ onFormatText, editor, savedStatus }) => {
           isOpen={showMediaDialog}
           onClose={() => setShowMediaDialog(false)}
           onInsert={(type, data) => {
-            onFormatText(type, data);
+            //onFormatText(type, data);
+            onInsertMedia(type, data);
             setShowMediaDialog(false);
           }}
         />
