@@ -14,6 +14,7 @@ function App() {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/payment-confirmation" element={<PaymentConfirmation />} />
         {/* Protect the Notes route */}
         <Route
           path="/notes"
@@ -23,7 +24,6 @@ function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="/payment-confirmation" element={<PaymentConfirmation />} />
       </Routes>
     </Router>
   );
