@@ -13,8 +13,12 @@ function PaymentConfirmation() {
   useEffect(() => {
     const queryParams = new URLSearchParams(location.search);
     const paymentIntentId = queryParams.get("payment_intent");
-    //const paymentIntentClientSecret = queryParams.get('payment_intent_client_secret');
     const redirectStatus = queryParams.get("redirect_status");
+
+    console.log("Payment confirmation params:", {
+      paymentIntentId,
+      redirectStatus,
+    });
 
     if (!paymentIntentId || !redirectStatus) {
       setStatus("error");
@@ -26,6 +30,20 @@ function PaymentConfirmation() {
     if (redirectStatus === "succeeded") {
       // Complete the registration
       const email = localStorage.getItem("temp_email"); // Store email temporarily during payment flow
+      const username = localStorage.getItem("temp_username");
+      const password = localStorage.getItem("temp_password");
+
+      console.log("Retrieved from localStorage:", {
+        hasEmail: !!email,
+        hasUsername: !!username,
+        hasPassword: !!password,
+      });
+
+      if (!email || !username || !password) {
+        setStatus("error");
+        setMessage("Registration data missing. Please try signing up again.");
+        return;
+      }
 
       axios
         .post(
@@ -55,17 +73,18 @@ function PaymentConfirmation() {
           }, 3000);
         })
         .catch((error) => {
-          setStatus("error");
-          setMessage(
-            "Payment was successful, but account activation failed. Please contact support."
-          );
-          console.error("Error completing registration:", error);
-        });
-    } else {
-      setStatus("error");
-      setMessage("Payment failed. Please try again.");
-    }
-  }, [navigate, location.search]);
+            console.error("Complete registration error:", error.response?.data || error.message);
+            setStatus("error");
+            setMessage(
+              error.response?.data?.message || 
+              "Payment was successful, but account activation failed. Please contact support."
+            );
+          });
+      } else {
+        setStatus("error");
+        setMessage("Payment failed. Please try again.");
+      }
+    }, [navigate, location.search]);
 
   return (
     <div className="payment-confirmation-container">

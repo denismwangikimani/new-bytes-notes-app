@@ -89,12 +89,10 @@ app.post("/register/initiate", async (req, res) => {
     });
   } catch (error) {
     console.error("Registration initiation error:", error);
-    return res
-      .status(500)
-      .json({ 
-        message: "Error initiating registration", 
-        error: error.toString() 
-      });
+    return res.status(500).json({
+      message: "Error initiating registration",
+      error: error.toString(),
+    });
   }
 });
 
@@ -138,11 +136,21 @@ app.post("/create-payment-intent", async (req, res) => {
 
 // Step 3: Complete registration after payment
 app.post("/register/complete", async (req, res) => {
-  const { email, paymentIntentId } = req.body;
+  const { email, paymentIntentId, username, password } = req.body;
+
+  // First log all incoming data (except password)
+  console.log("Register complete request:", {
+    email,
+    paymentIntentId,
+    hasUsername: !!username,
+    hasPassword: !!password,
+  });
 
   try {
     // Verify the payment intent was successful
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    console.log("Payment intent status:", paymentIntent.status);
+    console.log("Payment intent metadata:", paymentIntent.metadata);
 
     if (paymentIntent.status !== "succeeded") {
       return res.status(400).json({ message: "Payment not completed" });
@@ -151,12 +159,22 @@ app.post("/register/complete", async (req, res) => {
     // Get the user details from metadata
     const userId = paymentIntent.metadata.userId;
 
-    // Now we can create the user since payment is confirmed
-    const { username, password } = req.body; // You'll need to pass these again or store them temporarily
+    if (!userId) {
+      return res
+        .status(400)
+        .json({ message: "User ID not found in payment metadata" });
+    }
+
+    // Ensure required fields are present
+    if (!username || !password) {
+      return res
+        .status(400)
+        .json({ message: "Username and password are required" });
+    }
 
     // Create a user
     const user = new User({
-      _id: userId, // Use the same ID we created earlier
+      _id: userId,
       email,
       username,
       password: await bcrypt.hash(password, 10),
@@ -173,7 +191,7 @@ app.post("/register/complete", async (req, res) => {
         userEmail: user.email,
         isPaid: true,
       },
-      "secret", // Replace with your JWT secret
+      "secret",
       { expiresIn: "24h" }
     );
 
@@ -183,9 +201,11 @@ app.post("/register/complete", async (req, res) => {
     });
   } catch (error) {
     console.error("Error completing registration:", error);
-    res
-      .status(500)
-      .json({ message: "Error completing registration", error: error.message });
+    res.status(500).json({
+      message: "Error completing registration",
+      error: error.toString(),
+      stack: error.stack,
+    });
   }
 });
 

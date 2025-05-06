@@ -111,50 +111,78 @@ function Signup() {
       // When we have the client secret and we're on the payment step,
       // load the payment element
       const initializePayment = async () => {
-        const stripe = await stripePromise;
+        try {
+          console.log(
+            "Initializing payment with client secret (first chars):",
+            clientSecret ? clientSecret.substring(0, 10) + "..." : "null"
+          );
 
-        if (!stripe) {
-          setError("Could not initialize payment system");
-          return;
-        }
+          const stripe = await stripePromise;
 
-        const elements = stripe.elements({
-          clientSecret,
-          appearance: {
-            theme: "stripe",
-            variables: {
-              colorPrimary: "#4f46e5",
+          if (!stripe) {
+            console.error("Stripe failed to initialize");
+            setError("Could not initialize payment system");
+            return;
+          }
+
+          // Create elements instance
+          const elements = stripe.elements({
+            clientSecret,
+            appearance: {
+              theme: "stripe",
+              variables: {
+                colorPrimary: "#4f46e5",
+              },
             },
-          },
-        });
-
-        const paymentElement = elements.create("payment");
-        paymentElement.mount("#payment-element");
-
-        // Handle form submission
-        const form = document.getElementById("payment-form");
-        form.addEventListener("submit", async (event) => {
-          event.preventDefault();
-          setIsLoading(true);
-
-          const { error, paymentIntent } = await stripe.confirmPayment({
-            elements,
-            confirmParams: {
-              return_url: window.location.origin + "/payment-confirmation",
-              receipt_email: email,
-            },
-            redirect: "if_required",
           });
 
-          if (error) {
-            setError(error.message);
-            setIsLoading(false);
-          } else if (paymentIntent && paymentIntent.status === "succeeded") {
-            await handlePaymentSuccess(paymentIntent);
-          }
-        });
-      };
+          const paymentElement = elements.create("payment");
+          paymentElement.mount("#payment-element");
 
+          // Handle form submission
+          const form = document.getElementById("payment-form");
+          if (!form) {
+            console.error("Payment form not found in DOM");
+            setError("Payment form could not be loaded");
+            return;
+          }
+
+          form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            setIsLoading(true);
+
+            try {
+              const { error, paymentIntent } = await stripe.confirmPayment({
+                elements,
+                confirmParams: {
+                  return_url: window.location.origin + "/payment-confirmation",
+                  receipt_email: email,
+                },
+                redirect: "if_required",
+              });
+
+              if (error) {
+                console.error("Payment confirmation error:", error);
+                setError(error.message);
+                setIsLoading(false);
+              } else if (
+                paymentIntent &&
+                paymentIntent.status === "succeeded"
+              ) {
+                console.log("Payment successful, completing registration");
+                await handlePaymentSuccess(paymentIntent);
+              }
+            } catch (err) {
+              console.error("Error during payment confirmation:", err);
+              setError("Payment processing error: " + err.message);
+              setIsLoading(false);
+            }
+          });
+        } catch (error) {
+          console.error("Error in payment initialization:", error);
+          setError("Payment system initialization failed: " + error.message);
+        }
+      };
       initializePayment();
     }
   }, [clientSecret, step, email, navigate, handlePaymentSuccess]);
