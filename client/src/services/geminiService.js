@@ -507,6 +507,35 @@ const chunkText = (text, wordCount) => {
   return chunks;
 };
 
+// Function to strip markdown formatting from text
+export const stripMarkdownFormatting = (text) => {
+  if (!text) return '';
+  
+  // Replace headers (# Header)
+  text = text.replace(/^#{1,6}\s+(.+)$/gm, '$1');
+  
+  // Replace bold (**text**)
+  text = text.replace(/\*\*(.*?)\*\*/g, '$1');
+  
+  // Replace italic (*text*)
+  text = text.replace(/\*(.*?)\*/g, '$1');
+  
+  // Replace inline code (`code`)
+  text = text.replace(/`([^`]*)`/g, '$1');
+  
+  // Replace bullet points
+  text = text.replace(/^\s*[-*+]\s+/gm, '');
+  
+  // Replace numbered lists
+  text = text.replace(/^\s*\d+\.\s+/gm, '');
+  
+  // Replace horizontal rules (---, ___, ***)
+  text = text.replace(/^(\s*[-*_]){3,}\s*$/gm, '');
+  
+  return text;
+}
+
+
 // Keep the existing content generation function but update it
 export const generateContent = async (prompt) => {
   try {
@@ -517,18 +546,22 @@ export const generateContent = async (prompt) => {
     });
 
     // Handle different response structures
+    let responseText = "";
     if (result.response && typeof result.response.text === "function") {
-      return result.response.text();
+      responseText = result.response.text();
     } else if (result.text && typeof result.text === "function") {
-      return result.text();
+      responseText = result.text();
     } else if (result.candidates && result.candidates[0]?.content?.parts) {
       // For REST API style response
-      return result.candidates[0].content.parts[0].text || "";
+      responseText = result.candidates[0].content.parts[0].text || "";
     } else {
       // If we can't find text in expected places, try to stringify the entire response
       console.log("Unexpected response format:", result);
       return "Response could not be processed. Check console for details.";
     }
+
+    // Strip markdown formatting before returning
+    return stripMarkdownFormatting(responseText);
   } catch (error) {
     console.error("Error calling Gemini API:", error);
     return "Error generating content. Please try again.";
@@ -574,11 +607,11 @@ export const transformText = async (text, transformType) => {
       "Transform result received, length:",
       result ? result.length : 0
     );
+    // Since generateContent already strips formatting, no need to strip again
     return result;
   } catch (error) {
     console.error("Error in transformText:", error);
-    // Return an error message instead of rethrowing to prevent UI from breaking
-    return "Error processing your request. Please try again.";
+    return "Error transforming text. Please try again.";
   }
 };
 

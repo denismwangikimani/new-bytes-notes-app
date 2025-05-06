@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import React, {
   useState,
   useEffect,
@@ -17,6 +18,7 @@ import EditorToolbar from "../EditorToolbar";
 import {
   generateContent,
   transformText,
+  //stripMarkdownFormatting,
   //generateFlashcards,
 } from "../../services/geminiService"; // Added generateFlashcards
 import FlashcardModal from "../FlashcardModal";
@@ -1441,7 +1443,10 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
   // Update selection state for toolbar
   const handleSlateChange = (newValue) => {
-    console.log("Editor content changed:", JSON.stringify(newValue).substring(0, 100));
+    console.log(
+      "Editor content changed:",
+      JSON.stringify(newValue).substring(0, 100)
+    );
     setSlateValue(newValue); // Update main state
 
     const { selection } = editor;
@@ -1452,8 +1457,8 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         if (domSelection && domSelection.rangeCount > 0) {
           const domRange = domSelection.getRangeAt(0);
           const rect = domRange.getBoundingClientRect();
-          const editorRoot = ReactEditor.toDOMNode(editor, editor); // Get editor root DOM node
-          const editorRect = editorRoot.getBoundingClientRect();
+          //const editorRoot = ReactEditor.toDOMNode(editor, editor); // Get editor root DOM node
+          //const editorRect = editorRoot.getBoundingClientRect();
 
           setSelectionPosition({
             // Position relative to the editor or viewport? Viewport is easier.
@@ -1543,6 +1548,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       // Use the specific prompt structure for Ask AI
       const prompt = `Based *only* on the following text:\n\n"${context}"\n\nAnswer this question: ${question}`;
       const response = await generateContent(prompt);
+      // No need to strip markdown here as generateContent now does it
       setAskAIResponse(response);
     } catch (error) {
       console.error("Error in Ask AI:", error);
@@ -1660,9 +1666,9 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
         {/* --- SLATE EDITOR --- */}
         <Slate
-           key={`note-${note?._id || "new"}-${Date.now()}`}// More aggressive remounting strategy
+          key={`note-${note?._id || "new"}-${Date.now()}`} // More aggressive remounting strategy
           editor={editor}
-          initialValue={slateValue} 
+          initialValue={slateValue}
           value={slateValue}
           onChange={handleSlateChange}
         >
