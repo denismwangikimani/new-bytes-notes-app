@@ -85,25 +85,39 @@ function Signup() {
   const handlePaymentSuccess = useCallback(
     async (paymentIntent) => {
       try {
+        console.log("Payment successful, completing registration");
+
         // Complete the registration with payment confirmation
         const response = await axios.post(
           "https://new-bytes-notes-backend.onrender.com/register/complete",
           {
             email,
+            username,
+            password,
             paymentIntentId: paymentIntent.id,
           }
         );
+
+        // Clear temporary storage
+        localStorage.removeItem("temp_email");
+        localStorage.removeItem("temp_username");
+        localStorage.removeItem("temp_password");
 
         // Store token and navigate to notes
         localStorage.setItem("token", response.data.token);
         navigate("/notes");
       } catch (err) {
+        console.error(
+          "Registration completion error:",
+          err.response?.data || err.message
+        );
         setError(
-          "Payment confirmed but account activation failed. Please contact support."
+          err.response?.data?.message ||
+            "Payment confirmed but account activation failed. Please contact support."
         );
       }
     },
-    [email, navigate]
+    [email, username, password, navigate]
   );
 
   useEffect(() => {
