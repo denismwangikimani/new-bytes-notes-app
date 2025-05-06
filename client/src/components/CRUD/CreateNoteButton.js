@@ -11,7 +11,7 @@ const CreateNoteButton = ({ onCreate }) => {
   return (
     <button onClick={handleCreate} className="create-button">
       <PenSquare size={20} />
-      <span>New Note</span>
+      <span>Create</span>
     </button>
   );
 };
