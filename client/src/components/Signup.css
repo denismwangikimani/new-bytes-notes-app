@@ -1,0 +1,195 @@
+.auth-container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.auth-container h2 {
+  text-align: center;
+  margin-bottom: 2rem;
+  color: #111827;
+  font-size: 2rem;
+}
+
+.auth-form {
+  background-color: white;
+  border-radius: 8px;
+  padding: 2rem;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.auth-form h3 {
+  margin-top: 0;
+  color: #111827;
+  font-size: 1.2rem;
+  margin-bottom: 1.5rem;
+}
+
+.auth-form input {
+  display: block;
+  width: 100%;
+  padding: 0.8rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 1rem;
+  transition: border-color 0.2s;
+}
+
+.auth-form input:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.2);
+}
+
+.next-button,
+#submit-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.8rem 1rem;
+  background-color: #4f46e5;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.next-button:hover,
+#submit-button:hover {
+  background-color: #4338ca;
+}
+
+.next-button:disabled,
+#submit-button:disabled {
+  background-color: #a5b4fc;
+  cursor: not-allowed;
+}
+
+.error-message {
+  color: #ef4444;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.login-link {
+  text-align: center;
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+
+.login-link a {
+  color: #4f46e5;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.login-link a:hover {
+  text-decoration: underline;
+}
+
+.pricing-summary {
+  background-color: white;
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+  max-width: 500px;
+  margin: 0 auto 2rem auto;
+}
+
+.pricing-summary h3 {
+  margin-top: 0;
+  color: #111827;
+  font-size: 1.2rem;
+  margin-bottom: 0.5rem;
+}
+
+.benefits-list {
+  padding-left: 1.5rem;
+  margin-top: 1rem;
+  color: #4b5563;
+}
+
+.benefits-list li {
+  margin-bottom: 0.5rem;
+}
+
+.payment-container {
+  background-color: white;
+  border-radius: 8px;
+  padding: 2rem;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+  max-width: 500px;
+  margin: 0 auto;
+}
+
+.payment-container h3 {
+  margin-top: 0;
+  color: #111827;
+  font-size: 1.2rem;
+  margin-bottom: 1.5rem;
+}
+
+.payment-summary {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.payment-details {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.payment-amount {
+  color: #111827;
+  font-size: 1.1rem;
+}
+
+#payment-element {
+  margin-bottom: 1.5rem;
+}
+
+.back-button {
+  display: block;
+  width: 100%;
+  padding: 0.8rem 1rem;
+  margin-top: 1rem;
+  background-color: transparent;
+  color: #4f46e5;
+  border: 1px solid #4f46e5;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.back-button:hover {
+  background-color: rgba(79, 70, 229, 0.05);
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}

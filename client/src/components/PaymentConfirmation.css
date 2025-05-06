@@ -1,0 +1,65 @@
+.payment-confirmation-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background-color: #f5f5f5;
+  padding: 2rem;
+}
+
+.payment-confirmation-card {
+  background-color: white;
+  border-radius: 12px;
+  padding: 3rem;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  text-align: center;
+  max-width: 500px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.payment-confirmation-card h2 {
+  color: #111827;
+  font-size: 1.75rem;
+  margin: 1.5rem 0 0.75rem;
+}
+
+.payment-confirmation-card p {
+  color: #6b7280;
+  line-height: 1.5;
+  margin-bottom: 1.5rem;
+}
+
+.redirect-message {
+  font-size: 0.9rem;
+  color: #9ca3af;
+  margin-top: 2rem;
+}
+
+.retry-button {
+  padding: 0.8rem 2rem;
+  background-color: #4f46e5;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 1rem;
+}
+
+.retry-button:hover {
+  background-color: #4338ca;
+}
+
+.spinner {
+  animation: spin 1.5s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

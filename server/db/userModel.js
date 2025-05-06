@@ -19,6 +19,10 @@ const userSchema = new mongoose.Schema({
     required: [true, "Please provide a Password!"],
     unique: false,
   },
+  // New payment fields
+  isPaid: { type: Boolean, default: false },
+  paymentDate: { type: Date },
+  stripeCustomerId: { type: String },
 });
 
 //export the user schema model

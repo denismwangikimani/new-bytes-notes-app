@@ -59,8 +59,11 @@ app.use((req, res, next) => {
 // Middleware to parse JSON
 app.use(express.json());
 
-// Registration endpoint
-app.post("/register", async (req, res) => {
+//stripe connect
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
+// Step 1: Initiate registration without creating a token
+app.post("/register/initiate", async (req, res) => {
   const { email, username, password } = req.body;
 
   // Validate request data
@@ -69,25 +72,115 @@ app.post("/register", async (req, res) => {
   }
 
   try {
-    // Check if the user already exists and return an error message if the user exists
+    // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res
-        .status(409)
-        .json({ message: "User with this email already exists!" });
+      return res.status(400).json({ message: "User already exists!" });
     }
 
-    //hash the password using bcryptjs by passing the password and the number of rounds to hash the password(salt)
-    const hashedPassword = await bcrypt.hash(password, 10);
+    // Create a temporary user ID that we'll use for payment
+    // but don't save to the database yet
+    const tempUserId = new mongoose.Types.ObjectId();
 
-    // Create a new user to save in the database, by passing the email, username and hashed password
-    const newUser = new User({ email, username, password: hashedPassword });
-    await newUser.save();
-
-    // Respond with success message if user is created successfully
-    res.status(201).json({ message: "User registered successfully!" });
+    return res.status(200).json({
+      message: "Account details valid",
+      userId: tempUserId,
+    });
   } catch (error) {
-    res.status(500).json({ message: "Error registering user", error });
+    return res
+      .status(500)
+      .json({ message: "Error initiating registration", error });
+  }
+});
+
+// Step 2: Create a payment intent
+app.post("/create-payment-intent", async (req, res) => {
+  const { email, amount, userId } = req.body;
+
+  try {
+    // Create a new Stripe customer
+    const customer = await stripe.customers.create({
+      email: email,
+      metadata: {
+        userId: userId.toString(),
+      },
+    });
+
+    // Create a payment intent
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amount, // amount in cents
+      currency: "usd",
+      customer: customer.id,
+      metadata: {
+        userId: userId.toString(),
+        email: email,
+      },
+      receipt_email: email,
+      description: "Byte-Notes Lifetime Access",
+    });
+
+    res.status(200).send({
+      clientSecret: paymentIntent.client_secret,
+      customerId: customer.id,
+    });
+  } catch (error) {
+    console.error("Error creating payment intent:", error);
+    res
+      .status(500)
+      .json({ message: "Error processing payment", error: error.message });
+  }
+});
+
+// Step 3: Complete registration after payment
+app.post("/register/complete", async (req, res) => {
+  const { email, paymentIntentId } = req.body;
+
+  try {
+    // Verify the payment intent was successful
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (paymentIntent.status !== "succeeded") {
+      return res.status(400).json({ message: "Payment not completed" });
+    }
+
+    // Get the user details from metadata
+    const userId = paymentIntent.metadata.userId;
+
+    // Now we can create the user since payment is confirmed
+    const { username, password } = req.body; // You'll need to pass these again or store them temporarily
+
+    // Create a user
+    const user = new User({
+      _id: userId, // Use the same ID we created earlier
+      email,
+      username,
+      password: await bcrypt.hash(password, 10),
+      isPaid: true,
+      paymentDate: new Date(),
+    });
+
+    await user.save();
+
+    // Create and send token
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        userEmail: user.email,
+        isPaid: true,
+      },
+      "secret", // Replace with your JWT secret
+      { expiresIn: "24h" }
+    );
+
+    res.status(200).json({
+      message: "Registration successful!",
+      token,
+    });
+  } catch (error) {
+    console.error("Error completing registration:", error);
+    res
+      .status(500)
+      .json({ message: "Error completing registration", error: error.message });
   }
 });
 
@@ -515,183 +608,6 @@ app.post("/api/text-to-speech", auth, async (req, res) => {
   } catch (error) {
     console.error("Error generating speech:", error);
     res.status(500).json({ message: "Error generating speech", error });
-  }
-});
-
-// Upload file to Gemini API
-app.post(
-  "/api/gemini/upload-file",
-  auth,
-  upload.single("file"),
-  async (req, res) => {
-    try {
-      if (!req.file) {
-        return res.status(400).json({ message: "No file uploaded" });
-      }
-
-      // Before uploading to Gemini
-      console.log("About to upload to Gemini API:", req.file.originalname);
-      console.log("File size:", req.file.size, "bytes");
-      console.log("File type:", req.file.mimetype);
-
-      // Get a Gemini API key
-      const geminiApiKey = process.env.GEMINI_API_KEY;
-      console.log("GEMINI_API_KEY loaded:", geminiApiKey ? "Yes" : "NO!!!"); // Add this line
-      if (!geminiApiKey) {
-        console.error("Gemini API key is missing from environment variables"); // Added log
-        return res
-          .status(500)
-          .json({ message: "Gemini API key is not configured" });
-      }
-
-      // Create FormData for the Gemini File API request
-      const formData = new FormData();
-      formData.append("file", req.file.buffer, {
-        filename: req.file.originalname,
-        contentType: req.file.mimetype,
-      });
-
-      // Upload to Gemini File API
-      const geminiUploadResponse = await axios.post(
-        "https://generativelanguage.googleapis.com/v1beta/files",
-        formData,
-        {
-          headers: {
-            ...formData.getHeaders(),
-            "x-goog-api-key": geminiApiKey,
-          },
-        }
-      );
-
-      console.log(
-        "Successfully uploaded to Gemini:",
-        geminiUploadResponse.data.name
-      );
-
-      // Check if file was uploaded successfully
-      if (!geminiUploadResponse.data || !geminiUploadResponse.data.name) {
-        return res
-          .status(500)
-          .json({ message: "Failed to upload file to Gemini API" });
-      }
-
-      // Wait for the file to be processed
-      const fileName = geminiUploadResponse.data.name;
-      let fileProcessed = false;
-      let fileData = null;
-      let retries = 0;
-      const maxRetries = 10;
-
-      while (!fileProcessed && retries < maxRetries) {
-        const fileCheckResponse = await axios.get(
-          `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${geminiApiKey}`
-        );
-
-        fileData = fileCheckResponse.data;
-
-        if (fileData.state === "PROCESSED") {
-          fileProcessed = true;
-        } else if (fileData.state === "FAILED") {
-          return res
-            .status(500)
-            .json({ message: "File processing failed in Gemini API" });
-        } else {
-          // Wait 2 seconds before checking again
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          retries++;
-        }
-      }
-
-      if (!fileProcessed) {
-        return res.status(500).json({ message: "File processing timed out" });
-      }
-
-      // Return the file information
-      res.status(200).json({
-        message: "File uploaded successfully to Gemini API",
-        fileUri: fileData.uri,
-        mimeType: fileData.mimeType,
-        name: fileName,
-      });
-    } catch (error) {
-      console.error("Error uploading file to Gemini:", error);
-      res.status(500).json({
-        message: "Error uploading file to Gemini API",
-        error: error.message,
-      });
-    }
-  }
-);
-
-// Process file with Gemini API
-app.post("/api/gemini/process-file", auth, async (req, res) => {
-  try {
-    const { fileUri, mimeType, prompt } = req.body;
-
-    if (!fileUri || !mimeType || !prompt) {
-      return res.status(400).json({ message: "Missing required parameters" });
-    }
-
-    // Get a Gemini API key
-    const geminiApiKey = process.env.GEMINI_API_KEY;
-    if (!geminiApiKey) {
-      return res
-        .status(500)
-        .json({ message: "Gemini API key is not configured" });
-    }
-
-    // Create the file part
-    const filePart = {
-      fileData: {
-        mimeType: mimeType,
-        fileUri: fileUri,
-      },
-    };
-
-    // Process with Gemini API
-    const processResponse = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiApiKey}`,
-      {
-        contents: [
-          {
-            parts: [{ text: prompt }, filePart],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.4,
-          maxOutputTokens: 2048,
-        },
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    // Extract the response text
-    let responseText = "No response generated";
-
-    if (
-      processResponse.data &&
-      processResponse.data.candidates &&
-      processResponse.data.candidates[0] &&
-      processResponse.data.candidates[0].content &&
-      processResponse.data.candidates[0].content.parts &&
-      processResponse.data.candidates[0].content.parts[0]
-    ) {
-      responseText = processResponse.data.candidates[0].content.parts[0].text;
-    }
-
-    res.status(200).json({
-      text: responseText,
-    });
-  } catch (error) {
-    console.error("Error processing file with Gemini:", error);
-    res.status(500).json({
-      message: "Error processing file with Gemini API",
-      error: error.message,
-    });
   }
 });
 

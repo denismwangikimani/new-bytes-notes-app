@@ -5,12 +5,13 @@ import Signup from "./components/Signup";
 import Notes from "./components/Notes";
 import LandingPage from "./components/LandingPage";
 import ProtectedRoute from "./components/ProtectedRoute";
+import PaymentConfirmation from "./components/PaymentConfirmation";
 
 function App() {
   return (
     <Router>
       <Routes>
-      <Route path="/" element={<LandingPage />} />
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         {/* Protect the Notes route */}
@@ -22,6 +23,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/payment-confirmation" element={<PaymentConfirmation />} />
       </Routes>
     </Router>
   );
