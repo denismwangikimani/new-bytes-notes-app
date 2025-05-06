@@ -1,5 +1,6 @@
 // external imports
 const express = require("express");
+const mongoose = require("mongoose");
 const multer = require("multer");
 const dbConnect = require("./db/dbConnect");
 const User = require("./db/userModel");
@@ -87,9 +88,13 @@ app.post("/register/initiate", async (req, res) => {
       userId: tempUserId,
     });
   } catch (error) {
+    console.error("Registration initiation error:", error);
     return res
       .status(500)
-      .json({ message: "Error initiating registration", error });
+      .json({ 
+        message: "Error initiating registration", 
+        error: error.toString() 
+      });
   }
 });
 

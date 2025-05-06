@@ -50,6 +50,11 @@ function Signup() {
         }
       );
 
+      // Store temporary user data for the complete registration
+      localStorage.setItem("temp_email", email);
+      localStorage.setItem("temp_username", username);
+      localStorage.setItem("temp_password", password);
+
       // Now create a payment intent to get client secret
       const paymentResponse = await axios.post(
         "https://new-bytes-notes-backend.onrender.com/create-payment-intent",
