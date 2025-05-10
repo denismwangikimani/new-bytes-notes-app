@@ -6,10 +6,6 @@
   background-color: #f3f4f6;
 }
 
-.media-spacer {
-  padding: 5px 0;
-}
-
 /* NotesList styles */
 .notes-sidebar {
   width: 250px;
@@ -784,6 +780,10 @@ button:disabled {
 
 .rich-editor .media-container + p {
   margin-top: 1em;
+}
+
+.media-spacer {
+  padding: 5px 0;
 }
 
 /* Mobile view optimizations - add to the end of your notes.css file */
