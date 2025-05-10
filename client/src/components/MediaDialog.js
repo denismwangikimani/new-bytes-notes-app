@@ -3,7 +3,7 @@ import "./MediaDialog.css";
 import { X } from "lucide-react";
 
 // Add the API base URL constant - update this to your actual API endpoint
-const API_BASE_URL = "https://your-api-base-url.com";
+const API_BASE_URL = "https://new-bytes-notes-backend.onrender.com";
 
 const MediaDialog = ({ type, isOpen, onClose, onInsert }) => {
   const [url, setUrl] = useState("");

@@ -485,25 +485,10 @@ app.put("/notes/:id/move", auth, async (req, res) => {
   }
 });
 
-// Set up multer storage - use disk storage instead of memory storage
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    // Use the existing uploads directory
-    const uploadDir = path.join(__dirname, "uploads");
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    // Create unique filename
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    cb(null, uniqueSuffix + ext);
-  },
-});
+// File upload setup
+const storage = multer.memoryStorage();
 
-// Set up upload middleware with size limits
+// Keep the existing multer setup with size limits
 const upload = multer({
   storage: storage,
   limits: {
@@ -518,7 +503,7 @@ app.post("/api/upload", auth, upload.single("file"), async (req, res) => {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    const { originalname, mimetype, size, filename, path: filePath } = req.file;
+    const { originalname, mimetype, size, buffer } = req.file; // Use buffer instead of path
     const userId = req.user.userId;
 
     // Validate file size based on type
@@ -526,21 +511,18 @@ app.post("/api/upload", auth, upload.single("file"), async (req, res) => {
     const maxSize = isImage ? 5 * 1024 * 1024 : 16 * 1024 * 1024; // 5MB for images, 16MB for others
 
     if (size > maxSize) {
-      // Delete the file if it exceeds the size limit
-      fs.unlinkSync(filePath);
       return res.status(400).json({
         message: `File size exceeds the limit (${isImage ? "5MB" : "16MB"})`,
       });
     }
 
-    // Create a new file document with file path instead of buffer
+    // Create a new file document with file data in MongoDB
     const newFile = new File({
       user: userId,
       filename: originalname,
       contentType: mimetype,
       size: size,
-      storagePath: filePath, // Store path instead of binary data
-      diskFilename: filename,
+      data: buffer, // Store the binary data directly in MongoDB
     });
 
     await newFile.save();
@@ -557,7 +539,9 @@ app.post("/api/upload", auth, upload.single("file"), async (req, res) => {
     });
   } catch (error) {
     console.error("Error uploading file:", error);
-    res.status(500).json({ message: "Error uploading file", error });
+    res
+      .status(500)
+      .json({ message: "Error uploading file", error: error.toString() });
   }
 });
 
@@ -577,18 +561,13 @@ app.get("/api/files/:id", async (req, res) => {
       "Content-Disposition": `inline; filename="${file.filename}"`,
     });
 
-    // If we have a storagePath, send the file from disk
-    if (file.storagePath && fs.existsSync(file.storagePath)) {
-      return res.sendFile(file.storagePath);
-    } else if (file.data) {
-      // For backward compatibility with files stored in MongoDB
-      return res.send(file.data);
-    } else {
-      return res.status(404).json({ message: "File content not found" });
-    }
+    // Send the binary data
+    return res.send(file.data);
   } catch (error) {
     console.error("Error retrieving file:", error);
-    res.status(500).json({ message: "Error retrieving file", error });
+    res
+      .status(500)
+      .json({ message: "Error retrieving file", error: error.toString() });
   }
 });
 
