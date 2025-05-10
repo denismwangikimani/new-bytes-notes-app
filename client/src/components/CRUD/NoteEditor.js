@@ -68,6 +68,47 @@ const ELEMENT_TAGS = {
   P: (el) => ({ type: "paragraph", children: deserializeChildren(el) }),
   PRE: (el) => ({ type: "code", children: deserializeChildren(el) }),
   UL: (el) => ({ type: "bulleted-list", children: deserializeChildren(el) }),
+  DIV: (el) => {
+    // Check if this is a media container
+    if (el.classList.contains("media-container")) {
+      const dataType = el.getAttribute("data-type");
+
+      if (dataType === "image") {
+        const img = el.querySelector("img");
+        if (img) {
+          return {
+            type: "image",
+            url: img.getAttribute("src"),
+            alt: img.getAttribute("alt") || "",
+            children: [{ text: "" }],
+          };
+        }
+      } else if (dataType === "video") {
+        const video = el.querySelector("video");
+        if (video) {
+          return {
+            type: "video",
+            url: video.getAttribute("src"),
+            poster: video.getAttribute("poster") || null,
+            children: [{ text: "" }],
+          };
+        }
+      } else if (dataType === "file") {
+        return {
+          type: "file",
+          url: el.querySelector("a")?.getAttribute("href"),
+          filename: el.getAttribute("data-filename") || "File",
+          size: parseInt(el.getAttribute("data-size") || "0", 10),
+          contentType:
+            el.getAttribute("data-content-type") || "application/octet-stream",
+          children: [{ text: "" }],
+        };
+      }
+    }
+
+    // Default div handling
+    return { type: "paragraph", children: deserializeChildren(el) };
+  },
 };
 
 const TEXT_TAGS = {
@@ -302,6 +343,7 @@ const deserialize = (htmlString) => {
 // Serialize Slate JSON back to HTML
 const serializeNode = (node) => {
   if (Text.isText(node)) {
+    // Text node handling remains the same
     let string = escapeHtml(node.text);
     // Apply marks
     if (node.code) string = `<code>${string}</code>`;
@@ -334,6 +376,7 @@ const serializeNode = (node) => {
   const style = node.align ? ` style="text-align: ${node.align};"` : "";
 
   switch (node.type) {
+    // Existing cases remain the same
     case "paragraph":
       return `<p${style}>${children || "&nbsp;"}</p>`;
     case "heading-one":
@@ -356,6 +399,27 @@ const serializeNode = (node) => {
       return `<a href="${escapeHtml(
         node.url
       )}" target="_blank" rel="noopener noreferrer">${children}</a>`;
+
+    // Add cases for media elements
+    case "image":
+      return `<div data-type="image" class="media-container"><img src="${escapeHtml(
+        node.url
+      )}" alt="${escapeHtml(node.alt || "")}" /><p></p></div>`;
+    case "video":
+      return `<div data-type="video" class="media-container"><video controls src="${escapeHtml(
+        node.url
+      )}"${
+        node.poster ? ` poster="${escapeHtml(node.poster)}"` : ""
+      }></video><p></p></div>`;
+    case "file":
+      return `<div data-type="file" class="media-container file-container" data-filename="${escapeHtml(
+        node.filename
+      )}" data-size="${node.size}" data-content-type="${escapeHtml(
+        node.contentType || ""
+      )}"><a href="${escapeHtml(node.url)}">${escapeHtml(
+        node.filename
+      )}</a><p></p></div>`;
+
     default:
       return children;
   }
@@ -409,6 +473,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [aiResponse, setAIResponse] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const isAutoSaving = useRef(false);
 
   // Text selection and transformation states
   const [selectionPosition, setSelectionPosition] = useState(null);
@@ -448,7 +513,13 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
   // Update useEffect for note changes
   useEffect(() => {
-    // Create an empty default state
+    // Skip reloading content if we're in the middle of an auto-save
+    if (isAutoSaving.current) {
+      console.log("Skipping content reload during auto-save");
+      return;
+    }
+
+    // Rest of your existing note change effect code...
     const emptyState = [{ type: "paragraph", children: [{ text: "" }] }];
 
     console.log(
@@ -499,30 +570,32 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
   // Debounced Auto-Save Logic using Slate value
   useEffect(() => {
-    // Clear any existing timer when slateValue or title changes
     if (updateTimeoutRef.current) {
       clearTimeout(updateTimeoutRef.current);
     }
 
-    // Set a new timer
     updateTimeoutRef.current = setTimeout(() => {
       if (note?._id) {
-        const currentContent = serialize(slateValue); // Serialize current state
-        // Check if title or content has actually changed from the original note prop
+        const currentContent = serialize(slateValue);
         if (currentContent !== note.content || title !== note.title) {
           console.log("Auto-saving note...");
-          onUpdate(note._id, { title, content: currentContent });
+          isAutoSaving.current = true; // Set flag before saving
+          onUpdate(note._id, { title, content: currentContent }).finally(() => {
+            // Reset flag after save completes (success or error)
+            setTimeout(() => {
+              isAutoSaving.current = false;
+            }, 100);
+          });
         }
       }
-    }, 3000); // Adjust debounce time as needed
+    }, 3000);
 
-    // Cleanup function to clear timer on unmount or before next effect run
     return () => {
       if (updateTimeoutRef.current) {
         clearTimeout(updateTimeoutRef.current);
       }
     };
-  }, [slateValue, title, note, onUpdate, editor]);
+  }, [slateValue, title, note, onUpdate]);
 
   // Custom Editor Commands
   const CustomEditor = useMemo(
