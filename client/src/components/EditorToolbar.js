@@ -27,7 +27,12 @@ import {
 import "./EditorToolbar.css";
 import MediaDialog from "./MediaDialog";
 
-const EditorToolbar = ({ onFormatText, editor, savedStatus, onInsertMedia }) => {
+const EditorToolbar = ({
+  onFormatText,
+  editor,
+  savedStatus,
+  onInsertMedia,
+}) => {
   const [showAllTools, setShowAllTools] = useState(false);
   const [showFontFamilyMenu, setShowFontFamilyMenu] = useState(false);
   const [showFontSizeMenu, setShowFontSizeMenu] = useState(false);
@@ -511,39 +516,35 @@ const EditorToolbar = ({ onFormatText, editor, savedStatus, onInsertMedia }) => 
         <Quote size={18} />
       </button>
       <div className="toolbar-divider"></div>
-      
-      {/* Media insertion tools - UPDATED to use onFormatText('media', type) */}
-      <div className="editor-toolbar-section">
-        <button 
-          className="toolbar-button" 
-          onClick={() => onFormatText('media', 'image')}
-          title="Insert Image"
-        >
-          <Image size={18} />
-        </button>
-        <button 
-          className="toolbar-button" 
-          onClick={() => onFormatText('media', 'video')}
-          title="Insert Video"
-        >
-          <Video size={18} />
-        </button>
-        <button 
-          className="toolbar-button" 
-          onClick={() => onFormatText('link')}
-          title="Insert Link"
-        >
-          <Link size={18} />
-        </button>
-        <button 
-          className="toolbar-button" 
-          onClick={() => onFormatText('media', 'file')}
-          title="Insert File"
-        >
-          <FileText size={18} />
-        </button>
-      </div>
-      
+      <button
+        className="toolbar-button"
+        onClick={() => onFormatText("media", "image")}
+        title="Insert Image"
+      >
+        <Image size={18} />
+      </button>
+      <button
+        className="toolbar-button"
+        onClick={() => onFormatText("media", "video")}
+        title="Insert Video"
+      >
+        <Video size={18} />
+      </button>
+      <button
+        className="toolbar-button"
+        onClick={() => onFormatText("link")}
+        title="Insert Link"
+      >
+        <Link size={18} />
+      </button>
+      <button
+        className="toolbar-button"
+        onClick={() => onFormatText("media", "file")}
+        title="Insert File"
+      >
+        <FileText size={18} />
+      </button>
+
       {showMediaDialog && (
         <MediaDialog
           type={mediaType}

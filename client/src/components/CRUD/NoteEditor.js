@@ -24,6 +24,7 @@ import TextPreviewModal from "../TextPreviewModal";
 import EditorToolbar from "../EditorToolbar";
 import { generateContent, transformText } from "../../services/geminiService";
 import FlashcardModal from "../FlashcardModal";
+import FileSidebar from "./FileSidebar";
 import "./notes.css";
 
 // Slate imports
@@ -475,6 +476,11 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [isLoading, setIsLoading] = useState(false);
   const isAutoSaving = useRef(false);
 
+  //file states
+  const [isFileSidebarOpen, setIsFileSidebarOpen] = useState(false);
+  const [currentFileUrl, setCurrentFileUrl] = useState(null);
+  const [currentFileName, setCurrentFileName] = useState(null);
+
   // Text selection and transformation states
   const [selectionPosition, setSelectionPosition] = useState(null);
   const [selectedText, setSelectedText] = useState("");
@@ -799,7 +805,13 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
             contentEditable={false}
           >
             <div className="media-spacer">
-              <video controls src={element.url} poster={element.poster}>
+              <video
+                controls
+                src={element.url}
+                poster={element.poster}
+                preload="metadata" // Only load metadata, not the full video
+                key={`video-${element.url}`} // Use stable key to prevent remounting
+              >
                 Your browser doesn't support embedded videos.
               </video>
               {children}
@@ -820,14 +832,16 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
                 <span className="file-size">
                   {formatFileSize(element.size)}
                 </span>
-                <a
-                  href={element.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
                   className="view-file-button"
+                  onClick={() => {
+                    setCurrentFileUrl(element.url);
+                    setCurrentFileName(element.filename);
+                    setIsFileSidebarOpen(true);
+                  }}
                 >
                   View
-                </a>
+                </button>
               </div>
             </div>
             {children}
@@ -841,6 +855,21 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         );
     }
   }, []);
+
+  // // Add a useLayoutEffect to maintain scroll position during rerenders
+  // useLayoutEffect(() => {
+  //   let scrollPosition = 0;
+
+  //   return () => {
+  //     // Capture position before render
+  //     scrollPosition = window.scrollY;
+
+  //     // Restore it after render
+  //     requestAnimationFrame(() => {
+  //       window.scrollTo(0, scrollPosition);
+  //     });
+  //   };
+  // }, [slateValue]);
 
   // --- File Size Formatter ---
   const formatFileSize = (bytes) => {
@@ -1073,6 +1102,9 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
   // Update selection state for toolbar
   const handleSlateChange = (newValue) => {
+    // Store current scroll position
+    const scrollPosition = window.scrollY;
+
     setSlateValue(newValue);
 
     const { selection } = editor;
@@ -1100,6 +1132,14 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       setSelectionPosition(null);
       setSelectedText("");
     }
+
+    // Restore scroll position after state update
+    requestAnimationFrame(() => {
+      window.scrollTo({
+        top: scrollPosition,
+        behavior: "auto",
+      });
+    });
   };
 
   // Handle AI prompt submission (General AI Assistant)
@@ -1337,6 +1377,13 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         isOpen={isMediaDialogOpen}
         onClose={() => setIsMediaDialogOpen(false)}
         onInsert={handleMediaInsert}
+      />
+
+      <FileSidebar
+        isOpen={isFileSidebarOpen}
+        onClose={() => setIsFileSidebarOpen(false)}
+        fileUrl={currentFileUrl}
+        fileName={currentFileName}
       />
     </div>
   );

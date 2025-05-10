@@ -126,6 +126,8 @@
   max-height: 100vh;
   background-color: white;
   overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .editor-content-wrapper {
@@ -137,6 +139,9 @@
   padding-bottom: 0;
   position: relative;
   max-height: calc(100vh - 40px);
+   max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
 }
 
 .editor-title {
@@ -627,10 +632,12 @@ button:disabled {
 /* Media container styles */
 .media-container {
   margin: 20px auto;
-  max-width: 90%;
+  width: 75%;  /* Take 3/4 of the screen */
+  max-width: 75%;
   display: block;
   position: relative;
   clear: both;
+  box-sizing: border-box;
 }
 
 .media-container[contenteditable="false"] {
@@ -835,10 +842,14 @@ button:disabled {
   }
 
   /* Prevent horizontal overflow in media elements */
-  .media-container img,
-  .media-container video {
-    max-width: calc(100vw - 3rem);
-  }
+.media-container img,
+.media-container video {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+  border-radius: 4px;
+}
 
   .file-container {
     max-width: calc(100vw - 3rem);
