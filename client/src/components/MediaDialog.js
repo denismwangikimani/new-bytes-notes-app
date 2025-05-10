@@ -2,8 +2,8 @@ import React, { useState, useRef } from "react";
 import "./MediaDialog.css";
 import { X } from "lucide-react";
 
-// Add the API base URL constant
-const API_BASE_URL = "https://new-bytes-notes-backend.onrender.com";
+// Add the API base URL constant - update this to your actual API endpoint
+const API_BASE_URL = "https://your-api-base-url.com";
 
 const MediaDialog = ({ type, isOpen, onClose, onInsert }) => {
   const [url, setUrl] = useState("");
@@ -66,7 +66,6 @@ const MediaDialog = ({ type, isOpen, onClose, onInsert }) => {
       formData.append("file", file);
       formData.append("type", type);
 
-      // Update the fetch URL to use the deployed backend URL
       const response = await fetch(`${API_BASE_URL}/api/upload`, {
         method: "POST",
         body: formData,

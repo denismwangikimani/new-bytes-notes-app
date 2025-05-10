@@ -29,8 +29,8 @@ import MediaDialog from "./MediaDialog";
 
 const EditorToolbar = ({ onFormatText, editor, savedStatus, onInsertMedia }) => {
   const [showAllTools, setShowAllTools] = useState(false);
-  const [showFontFamilyMenu, setShowFontFamilyMenu] = useState(false); // Renamed from showFontMenu
-  const [showFontSizeMenu, setShowFontSizeMenu] = useState(false); // New state for font size menu
+  const [showFontFamilyMenu, setShowFontFamilyMenu] = useState(false);
+  const [showFontSizeMenu, setShowFontSizeMenu] = useState(false);
   const [showHeadingMenu, setShowHeadingMenu] = useState(false);
   const [textColor, setTextColor] = useState("#000000");
   const [bgColor, setBgColor] = useState("#ffffff");
@@ -44,10 +44,10 @@ const EditorToolbar = ({ onFormatText, editor, savedStatus, onInsertMedia }) => 
   const [mediaType, setMediaType] = useState(null); // 'image', 'video', 'link', or 'file'
 
   // Refs for dropdowns and their toggle buttons
-  const fontFamilyMenuRef = useRef(null); // Renamed
-  const fontFamilyButtonRef = useRef(null); // Renamed
-  const fontSizeMenuRef = useRef(null); // New ref
-  const fontSizeButtonRef = useRef(null); // New ref
+  const fontFamilyMenuRef = useRef(null);
+  const fontFamilyButtonRef = useRef(null);
+  const fontSizeMenuRef = useRef(null);
+  const fontSizeButtonRef = useRef(null);
   const headingMenuRef = useRef(null);
   const headingButtonRef = useRef(null);
 
@@ -109,7 +109,7 @@ const EditorToolbar = ({ onFormatText, editor, savedStatus, onInsertMedia }) => 
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [showFontFamilyMenu, showFontSizeMenu, showHeadingMenu]); // Updated dependencies
+  }, [showFontFamilyMenu, showFontSizeMenu, showHeadingMenu]);
 
   const handleFormat = (formatType, value = null) => {
     // Handle media insertion differently
@@ -511,42 +511,45 @@ const EditorToolbar = ({ onFormatText, editor, savedStatus, onInsertMedia }) => 
         <Quote size={18} />
       </button>
       <div className="toolbar-divider"></div>
-      {/* Media insertion tools */}
-      <button
-        className="toolbar-button"
-        onClick={() => handleFormat("image")}
-        title="Insert Image"
-      >
-        <Image size={18} />
-      </button>
-      <button
-        className="toolbar-button"
-        onClick={() => handleFormat("video")}
-        title="Insert Video"
-      >
-        <Video size={18} />
-      </button>
-      <button
-        className="toolbar-button"
-        onClick={() => handleFormat("link")}
-        title="Insert Link"
-      >
-        <Link size={18} />
-      </button>
-      <button
-        className="toolbar-button"
-        onClick={() => handleFormat("file")}
-        title="Insert File"
-      >
-        <FileText size={18} />
-      </button>
+      
+      {/* Media insertion tools - UPDATED to use onFormatText('media', type) */}
+      <div className="editor-toolbar-section">
+        <button 
+          className="toolbar-button" 
+          onClick={() => onFormatText('media', 'image')}
+          title="Insert Image"
+        >
+          <Image size={18} />
+        </button>
+        <button 
+          className="toolbar-button" 
+          onClick={() => onFormatText('media', 'video')}
+          title="Insert Video"
+        >
+          <Video size={18} />
+        </button>
+        <button 
+          className="toolbar-button" 
+          onClick={() => onFormatText('link')}
+          title="Insert Link"
+        >
+          <Link size={18} />
+        </button>
+        <button 
+          className="toolbar-button" 
+          onClick={() => onFormatText('media', 'file')}
+          title="Insert File"
+        >
+          <FileText size={18} />
+        </button>
+      </div>
+      
       {showMediaDialog && (
         <MediaDialog
           type={mediaType}
           isOpen={showMediaDialog}
           onClose={() => setShowMediaDialog(false)}
           onInsert={(type, data) => {
-            //onFormatText(type, data);
             onInsertMedia(type, data);
             setShowMediaDialog(false);
           }}

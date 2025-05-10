@@ -27,6 +27,9 @@ const fileSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    // New fields for disk storage
+    storagePath: { type: String }, // Full path to file on disk
+    diskFilename: { type: String }, // Generated filename on disk
   },
   {
     timestamps: true,

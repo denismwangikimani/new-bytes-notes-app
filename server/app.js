@@ -485,12 +485,29 @@ app.put("/notes/:id/move", auth, async (req, res) => {
   }
 });
 
-// Set up multer storage
-const storage = multer.memoryStorage();
+// Set up multer storage - use disk storage instead of memory storage
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    // Use the existing uploads directory
+    const uploadDir = path.join(__dirname, "uploads");
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    // Create unique filename
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, uniqueSuffix + ext);
+  },
+});
+
+// Set up upload middleware with size limits
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 16 * 1024 * 1024, // 16MB limit
+    fileSize: 16 * 1024 * 1024, // 16MB limit for all files
   },
 });
 
@@ -501,7 +518,7 @@ app.post("/api/upload", auth, upload.single("file"), async (req, res) => {
       return res.status(400).json({ message: "No file uploaded" });
     }
 
-    const { originalname, mimetype, size, buffer } = req.file;
+    const { originalname, mimetype, size, filename, path: filePath } = req.file;
     const userId = req.user.userId;
 
     // Validate file size based on type
@@ -509,18 +526,21 @@ app.post("/api/upload", auth, upload.single("file"), async (req, res) => {
     const maxSize = isImage ? 5 * 1024 * 1024 : 16 * 1024 * 1024; // 5MB for images, 16MB for others
 
     if (size > maxSize) {
+      // Delete the file if it exceeds the size limit
+      fs.unlinkSync(filePath);
       return res.status(400).json({
         message: `File size exceeds the limit (${isImage ? "5MB" : "16MB"})`,
       });
     }
 
-    // Create a new file document
+    // Create a new file document with file path instead of buffer
     const newFile = new File({
       user: userId,
       filename: originalname,
       contentType: mimetype,
       size: size,
-      data: buffer,
+      storagePath: filePath, // Store path instead of binary data
+      diskFilename: filename,
     });
 
     await newFile.save();
@@ -541,7 +561,7 @@ app.post("/api/upload", auth, upload.single("file"), async (req, res) => {
   }
 });
 
-// File retrieval endpoint
+// Update file retrieval endpoint to work with files on disk
 app.get("/api/files/:id", async (req, res) => {
   try {
     const file = await File.findById(req.params.id);
@@ -550,20 +570,29 @@ app.get("/api/files/:id", async (req, res) => {
       return res.status(404).json({ message: "File not found" });
     }
 
+    // Set appropriate headers
     res.set({
       "Content-Type": file.contentType,
       "Content-Length": file.size,
       "Content-Disposition": `inline; filename="${file.filename}"`,
     });
 
-    res.send(file.data);
+    // If we have a storagePath, send the file from disk
+    if (file.storagePath && fs.existsSync(file.storagePath)) {
+      return res.sendFile(file.storagePath);
+    } else if (file.data) {
+      // For backward compatibility with files stored in MongoDB
+      return res.send(file.data);
+    } else {
+      return res.status(404).json({ message: "File content not found" });
+    }
   } catch (error) {
     console.error("Error retrieving file:", error);
     res.status(500).json({ message: "Error retrieving file", error });
   }
 });
 
-// Add this endpoint to delete files
+// Update delete endpoint to handle files on disk
 app.delete("/api/files/:id", auth, async (req, res) => {
   try {
     const fileId = req.params.id;
@@ -578,7 +607,12 @@ app.delete("/api/files/:id", auth, async (req, res) => {
       });
     }
 
-    // Delete the file
+    // Delete the file from disk if it exists
+    if (file.storagePath && fs.existsSync(file.storagePath)) {
+      fs.unlinkSync(file.storagePath);
+    }
+
+    // Delete the file from the database
     await File.findByIdAndDelete(fileId);
 
     res.status(200).json({ message: "File deleted successfully" });
