@@ -139,7 +139,7 @@
   padding-bottom: 0;
   position: relative;
   max-height: calc(100vh - 40px);
-   max-width: 100%;
+  max-width: 100%;
   overflow-x: hidden;
   box-sizing: border-box;
 }
@@ -632,8 +632,8 @@ button:disabled {
 /* Media container styles */
 .media-container {
   margin: 20px auto;
-  width: 75%;  /* Take 3/4 of the screen */
-  max-width: 75%;
+  width: 50%; /* Change from 75% to 50% */
+  max-width: 50%; /* Change from 75% to 50% */
   display: block;
   position: relative;
   clear: both;
@@ -668,7 +668,8 @@ button:disabled {
   padding: 12px;
   background-color: #f9fafb;
   margin: 15px auto;
-  max-width: 90%;
+  width: 50%;
+  max-width: 50%;
 }
 
 .file-preview {
@@ -842,14 +843,14 @@ button:disabled {
   }
 
   /* Prevent horizontal overflow in media elements */
-.media-container img,
-.media-container video {
-  max-width: 100%;
-  height: auto;
-  display: block;
-  margin: 0 auto;
-  border-radius: 4px;
-}
+  .media-container img,
+  .media-container video {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+    border-radius: 4px;
+  }
 
   .file-container {
     max-width: calc(100vw - 3rem);

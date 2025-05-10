@@ -583,13 +583,37 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     updateTimeoutRef.current = setTimeout(() => {
       if (note?._id) {
         const currentContent = serialize(slateValue);
+
+        // Skip saving if content hasn't changed significantly
+        // This helps prevent unnecessary rendering cycles
         if (currentContent !== note.content || title !== note.title) {
           console.log("Auto-saving note...");
           isAutoSaving.current = true; // Set flag before saving
+
+          // Save the current scroll position and selection
+          const scrollPos = window.scrollY;
+          const selection = editor.selection;
+
           onUpdate(note._id, { title, content: currentContent }).finally(() => {
-            // Reset flag after save completes (success or error)
+            // After save completes, restore scroll position and selection
             setTimeout(() => {
               isAutoSaving.current = false;
+
+              // Restore cursor and scroll position
+              window.scrollTo({
+                top: scrollPos,
+                behavior: "auto",
+              });
+
+              if (selection) {
+                try {
+                  Transforms.select(editor, selection);
+                  ReactEditor.focus(editor);
+                } catch (err) {
+                  // Handle case where selection is no longer valid
+                  console.warn("Couldn't restore selection after auto-save");
+                }
+              }
             }, 100);
           });
         }
@@ -601,7 +625,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         clearTimeout(updateTimeoutRef.current);
       }
     };
-  }, [slateValue, title, note, onUpdate]);
+  }, [slateValue, title, note, onUpdate, editor]);
 
   // Custom Editor Commands
   const CustomEditor = useMemo(
@@ -810,7 +834,15 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
                 src={element.url}
                 poster={element.poster}
                 preload="metadata" // Only load metadata, not the full video
-                key={`video-${element.url}`} // Use stable key to prevent remounting
+                playsInline
+                muted={false}
+                autoPlay={false}
+                key={element.url} // Stable key to prevent remounts
+                onLoadedData={(e) => {
+                  // Prevent video from causing page jumps when loaded
+                  const video = e.target;
+                  video.pause();
+                }}
               >
                 Your browser doesn't support embedded videos.
               </video>
@@ -1102,13 +1134,17 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
   // Update selection state for toolbar
   const handleSlateChange = (newValue) => {
-    // Store current scroll position
+    // Store current selection position before state update
+    const selection = editor.selection;
     const scrollPosition = window.scrollY;
+    const cursorElement = selection
+      ? document.getSelection()?.focusNode?.parentElement
+      : null;
 
+    // Update state
     setSlateValue(newValue);
 
-    const { selection } = editor;
-
+    // Handle selection toolbar positioning
     if (selection && Range.isExpanded(selection)) {
       try {
         const domSelection = window.getSelection();
@@ -1133,13 +1169,30 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       setSelectedText("");
     }
 
-    // Restore scroll position after state update
-    requestAnimationFrame(() => {
+    // Restore scroll position after state update with a slight delay to ensure DOM updates
+    setTimeout(() => {
+      // Try to maintain cursor visibility if we have an active selection
+      if (cursorElement && document.body.contains(cursorElement)) {
+        const rect = cursorElement.getBoundingClientRect();
+        const isVisible =
+          rect.top >= 0 &&
+          rect.left >= 0 &&
+          rect.bottom <= window.innerHeight &&
+          rect.right <= window.innerWidth;
+
+        if (!isVisible) {
+          // If cursor not visible, scroll to it
+          cursorElement.scrollIntoView({ behavior: "auto", block: "center" });
+          return;
+        }
+      }
+
+      // Otherwise restore previous scroll position
       window.scrollTo({
         top: scrollPosition,
         behavior: "auto",
       });
-    });
+    }, 10);
   };
 
   // Handle AI prompt submission (General AI Assistant)
