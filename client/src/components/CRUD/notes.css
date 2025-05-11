@@ -19,6 +19,7 @@
   transition: transform 0.3s ease;
   position: relative;
   z-index: 50;
+  padding-bottom: 1rem;
 }
 
 .notes-list {
@@ -332,9 +333,10 @@ button:disabled {
 }
 
 .sidebar-footer {
-  margin-top: auto; /* Pushes to the bottom */
+  margin-top: auto; 
   padding-top: 1rem;
-  border-top: 1px solid #2e3648; /* Optional separator */
+  border-top: 1px solid #2e3648; 
+  margin-bottom: 1rem;
 }
 
 .settings-link {

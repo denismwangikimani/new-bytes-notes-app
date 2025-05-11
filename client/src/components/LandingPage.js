@@ -45,7 +45,7 @@ function LandingPage() {
             </Link>
           </div>
           <div className="hero-image">
-            <img src="/notepad-illustration.png" alt="AI Enhanced Notes" />
+            <img src="/notesbookicon.png" alt="Byte-Notes App" />
           </div>
         </div>
 
@@ -95,37 +95,41 @@ function LandingPage() {
               </div>
             </div>
             <div className="pricing-features">
-              <div className="feature">
-                <CheckCircle size={20} />
-                <span>Create Unlimited Notes</span>
+              <div className="features-column">
+                <div className="feature">
+                  <CheckCircle size={20} />
+                  <span>Create Unlimited Notes</span>
+                </div>
+                <div className="feature">
+                  <Cloud size={20} />
+                  <span>Synchronized Notes</span>
+                </div>
+                <div className="feature">
+                  <Cpu size={20} />
+                  <span>AI Features (Ask, Explain, Summarize)</span>
+                </div>
+                <div className="feature">
+                  <BookOpen size={20} />
+                  <span>Flashcard AI Questions</span>
+                </div>
               </div>
-              <div className="feature">
-                <Cloud size={20} />
-                <span>Synchronized Notes</span>
-              </div>
-              <div className="feature">
-                <Cpu size={20} />
-                <span>AI Features (Ask, Explain, Summarize)</span>
-              </div>
-              <div className="feature">
-                <BookOpen size={20} />
-                <span>Flashcard AI Questions</span>
-              </div>
-              <div className="feature">
-                <Headphones size={20} />
-                <span>Audio Overview</span>
-              </div>
-              <div className="feature">
-                <Image size={20} />
-                <span>Upload Files, Images, Videos</span>
-              </div>
-              <div className="feature">
-                <Users size={20} />
-                <span>Group Notes Together</span>
-              </div>
-              <div className="feature">
-                <FileText size={20} />
-                <span>AI Document Analysis</span>
+              <div className="features-column">
+                <div className="feature">
+                  <Headphones size={20} />
+                  <span>Audio Overview</span>
+                </div>
+                <div className="feature">
+                  <Image size={20} />
+                  <span>Upload Files, Images, Videos</span>
+                </div>
+                <div className="feature">
+                  <Users size={20} />
+                  <span>Group Notes Together</span>
+                </div>
+                <div className="feature">
+                  <FileText size={20} />
+                  <span>AI Document Analysis</span>
+                </div>
               </div>
             </div>
             <Link to="/signup">
@@ -136,7 +140,6 @@ function LandingPage() {
             </Link>
           </div>
         </div>
-        
       </main>
 
       <footer className="landing-footer">

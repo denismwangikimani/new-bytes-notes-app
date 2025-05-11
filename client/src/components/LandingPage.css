@@ -124,20 +124,21 @@ html {
 }
 
 .hero-image img {
-  max-width: 500px;
+  max-width: 450px;
   border-radius: 10px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
 }
 
 .pricing-section {
   background-color: #ffffff;
-  padding: 5rem 6rem;
+  padding: 4rem 2rem;
   display: flex;
   justify-content: center;
 }
 
 .pricing-card {
-  width: 400px;
+  width: 100%;
+  max-width: 650px;
   background-color: white;
   border-radius: 12px;
   overflow: hidden;
@@ -189,6 +190,16 @@ html {
 
 .pricing-features {
   padding: 2rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.features-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem; 
+  width: calc(50% - 0.5rem); 
 }
 
 .feature {
@@ -274,11 +285,11 @@ html {
 }
 
 .landing-footer {
-  background-color: #111827;
-  color: white;
+  background-color: #f5f5f5;
+  color: #333;
   text-align: center;
   padding: 2rem;
-  opacity: 0.9;
+  opacity: 1;
 }
 
 @media (max-width: 1024px) {
@@ -296,7 +307,7 @@ html {
 
   .hero-image img {
     margin-top: 2rem;
-    max-width: 100%;
+    max-width: 350%;
   }
 
   .hero-title {
@@ -321,7 +332,21 @@ html {
     font-size: 1.4rem;
   }
 
-  .pricing-card {
+  .hero-image img {
+    max-width: 300px;
+  }
+
+  .pricing-features {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .features-column {
     width: 100%;
+    align-items: flex-start;
+  }
+
+  .pricing-card {
+    width: 90%;
   }
 }
