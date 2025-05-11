@@ -8,6 +8,8 @@ import React, {
 } from "react";
 import {
   FileIcon,
+  Maximize,
+  Minimize,
   //Image as ImageIcon,
   //Video as VideoIcon,
   //Link as LinkIcon,
@@ -475,6 +477,10 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [aiResponse, setAIResponse] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const isAutoSaving = useRef(false);
+  const [fullscreenMedia, setFullscreenMedia] = useState({
+    id: null,
+    type: null,
+  });
 
   //file states
   const [isFileSidebarOpen, setIsFileSidebarOpen] = useState(false);
@@ -809,45 +815,92 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           </p>
         );
       case "image":
+        const isImageFullscreen =
+          fullscreenMedia.id === element.url &&
+          fullscreenMedia.type === "image";
         return (
           <div
-            className="media-container"
             {...attributes}
             contentEditable={false}
+            className={`media-container ${
+              isImageFullscreen ? "fullscreen-active" : ""
+            }`}
           >
-            <div className="media-spacer">
+            {/* Inner div for positioning content relative to the Slate block */}
+            <div style={{ position: "relative" }}>
               <img src={element.url} alt={element.alt || ""} />
-              {children}
+              <button
+                className="fullscreen-button"
+                onClick={(e) => {
+                  e.stopPropagation(); // Prevent Slate handling the click
+                  toggleFullscreen(element);
+                }}
+                title={
+                  isImageFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"
+                }
+              >
+                {isImageFullscreen ? (
+                  <Minimize size={18} />
+                ) : (
+                  <Maximize size={18} />
+                )}
+              </button>
             </div>
+            {children}
           </div>
         );
       case "video":
+        const isVideoFullscreen =
+          fullscreenMedia.id === element.url &&
+          fullscreenMedia.type === "video";
         return (
           <div
-            className="media-container"
             {...attributes}
             contentEditable={false}
+            className={`media-container ${
+              isVideoFullscreen ? "fullscreen-active" : ""
+            }`}
           >
-            <div className="media-spacer">
+            {/* Inner div for positioning content relative to the Slate block */}
+            <div style={{ position: "relative" }}>
               <video
                 controls
                 src={element.url}
                 poster={element.poster}
-                preload="metadata" // Only load metadata, not the full video
+                preload="metadata"
                 playsInline
                 muted={false}
                 autoPlay={false}
-                key={element.url} // Stable key to prevent remounts
+                key={element.url}
                 onLoadedData={(e) => {
-                  // Prevent video from causing page jumps when loaded
                   const video = e.target;
                   video.pause();
                 }}
+                onClick={(e) => {
+                  if (isVideoFullscreen) e.stopPropagation();
+                }} // Prevent clicks from bubbling when fullscreen
               >
                 Your browser doesn't support embedded videos.
               </video>
-              {children}
+              <button
+                className="fullscreen-button"
+                onClick={(e) => {
+                  e.stopPropagation(); // Crucial to prevent Slate handling the click
+                  toggleFullscreen(element);
+                }}
+                title={
+                  isVideoFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"
+                }
+              >
+                {isVideoFullscreen ? (
+                  <Minimize size={18} />
+                ) : (
+                  <Maximize size={18} />
+                )}
+              </button>
             </div>
+            {children}{" "}
+            {/* This is for Slate: MUST be rendered for void elements */}
           </div>
         );
       case "file":
@@ -902,6 +955,21 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   //     });
   //   };
   // }, [slateValue]);
+
+  //fullscreen toggle function
+  const toggleFullscreen = (element) => {
+    // Assuming element.url is a unique identifier for the media.
+    // If not, you might need to pass a more stable ID if available from your element structure.
+    const mediaId = element.url;
+    if (
+      fullscreenMedia.id === mediaId &&
+      fullscreenMedia.type === element.type
+    ) {
+      setFullscreenMedia({ id: null, type: null }); // Exit fullscreen
+    } else {
+      setFullscreenMedia({ id: mediaId, type: element.type }); // Enter fullscreen
+    }
+  };
 
   // --- File Size Formatter ---
   const formatFileSize = (bytes) => {
