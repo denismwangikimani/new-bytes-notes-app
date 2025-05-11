@@ -1,9 +1,17 @@
+// filepath: client/src/components/CRUD/NoteList.js
 import React, { useState, useEffect } from "react";
 import NoteItem from "./NoteItem";
 import CreateNoteButton from "./CreateNoteButton";
 import { SidebarToggle } from "./SidebarToggle";
 import { useSidebar } from "./SidebarContext";
-import { ChevronDown, ChevronRight, FolderPlus, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FolderPlus,
+  X,
+  Settings,
+} from "lucide-react"; // Import Settings
+import { Link } from "react-router-dom"; // Import Link
 import "./notes.css";
 
 const NotesList = ({
@@ -15,10 +23,10 @@ const NotesList = ({
   onSearch,
   onFilter,
   isLoading,
-  groups = [], // New prop for groups
-  onCreateGroup, // New prop for creating groups
-  onDeleteGroup, // New prop for deleting groups
-  onMoveNote, // New prop for moving notes between groups
+  groups = [],
+  onCreateGroup,
+  onDeleteGroup,
+  onMoveNote,
 }) => {
   const [searchText, setSearchText] = useState("");
   const [filterDate, setFilterDate] = useState("");
@@ -43,7 +51,6 @@ const NotesList = ({
     }));
   };
 
-  // Handle search and filter functions - existing code remains...
   const handleSearch = () => {
     if (isLoading) return;
     onSearch(searchText);
@@ -76,7 +83,6 @@ const NotesList = ({
     onFilter("");
   };
 
-  // Handle note selection and close sidebar on mobile
   const handleNoteSelect = (note) => {
     onNoteSelect(note);
     if (window.innerWidth <= 768) {
@@ -84,7 +90,6 @@ const NotesList = ({
     }
   };
 
-  // New group management functions
   const handleCreateGroup = () => {
     if (newGroupName.trim()) {
       onCreateGroup({ name: newGroupName.trim() });
@@ -99,7 +104,6 @@ const NotesList = ({
     }
   };
 
-  // Group notes by their groupId
   const organizeNotesByGroup = () => {
     const ungroupedNotes = notes.filter((note) => !note.groupId);
     const groupedNotes = {};
@@ -115,67 +119,62 @@ const NotesList = ({
 
   const { ungroupedNotes, groupedNotes } = organizeNotesByGroup();
 
+  if (!isSidebarOpen && window.innerWidth > 768) {
+    return null; // Don't render if sidebar is closed on desktop
+  }
+
   return (
-    <div className={`notes-sidebar ${isSidebarOpen ? "open" : "hidden"}`}>
+    <div className={`notes-sidebar ${isSidebarOpen ? "open" : "closed"}`}>
       <div className="sidebar-header">
-        <CreateNoteButton onCreate={onCreate} />
         <SidebarToggle />
+        <CreateNoteButton onCreate={onCreate} />
       </div>
 
-      {/* Search & Filter sections remain unchanged */}
+      {/* Search and Filter */}
       <div className="search-container">
         <input
           type="text"
+          placeholder="Search notes..."
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           onKeyPress={handleSearchKeyPress}
-          placeholder="Search notes..."
           disabled={isLoading}
         />
+        <button onClick={handleSearch} disabled={isLoading}>
+          Search
+        </button>
         {searchText && (
-          <button
-            onClick={handleSearchClear}
-            className="clear-button"
-            disabled={isLoading}
-          >
-            ×
+          <button onClick={handleSearchClear} className="clear-search-btn">
+            <X size={14} />
           </button>
         )}
-        <button onClick={handleSearch} disabled={isLoading}>
-          {isLoading ? "Searching..." : "Search"}
-        </button>
       </div>
-
       <div className="filter-container">
-        <label htmlFor="filterDate">Filter by Created Date:</label>
+        <label htmlFor="filter-date">Filter by creation date:</label>
         <input
           type="date"
-          id="filterDate"
+          id="filter-date"
           value={filterDate}
           onChange={(e) => setFilterDate(e.target.value)}
           onKeyPress={handleFilterKeyPress}
           disabled={isLoading}
         />
+        <button onClick={handleFilter} disabled={isLoading}>
+          Filter
+        </button>
         {filterDate && (
-          <button
-            onClick={handleFilterClear}
-            className="clear-button"
-            disabled={isLoading}
-          >
-            ×
+          <button onClick={handleFilterClear} className="clear-filter-btn">
+            <X size={14} />
           </button>
         )}
-        <button onClick={handleFilter} disabled={isLoading}>
-          {isLoading ? "Filtering..." : "Filter"}
-        </button>
       </div>
 
-      {/* New section for group management */}
+      {/* Group Creation */}
       <div className="groups-header">
         <span>Groups</span>
         <button
+          onClick={() => setIsCreatingGroup(true)}
           className="create-group-button"
-          onClick={() => setIsCreatingGroup(!isCreatingGroup)}
           title="Create new group"
         >
           <FolderPlus size={16} />
@@ -227,43 +226,60 @@ const NotesList = ({
                 className="delete-group-button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDeleteGroup(group._id);
+                  if (
+                    window.confirm(
+                      "Are you sure you want to delete this group? Notes in this group will become ungrouped."
+                    )
+                  ) {
+                    onDeleteGroup(group._id);
+                  }
                 }}
                 title="Delete group"
               >
                 <X size={14} />
               </button>
             </div>
-
             {expandedGroups[group._id] &&
-              groupedNotes[group._id]?.map((note) => (
+              (groupedNotes[group._id] || []).map((note) => (
                 <NoteItem
                   key={note._id}
                   note={note}
                   isActive={activeNote?._id === note._id}
                   onSelect={() => handleNoteSelect(note)}
                   onDelete={() => onDeleteNote(note._id)}
-                  inGroup={true}
+                  onMove={(groupId) => onMoveNote(note._id, groupId)}
+                  groups={groups}
+                  isGrouped={true}
                 />
               ))}
           </div>
         ))}
 
-        {/* Ungrouped notes section */}
-        <div className="ungrouped-notes-header">
-          <span>Ungrouped Notes</span>
-        </div>
-        {ungroupedNotes.map((note) => (
-          <NoteItem
-            key={note._id}
-            note={note}
-            isActive={activeNote?._id === note._id}
-            onSelect={() => handleNoteSelect(note)}
-            onDelete={() => onDeleteNote(note._id)}
-            onMove={(groupId) => onMoveNote(note._id, groupId)}
-            groups={groups}
-          />
-        ))}
+        {/* Display ungrouped notes */}
+        {ungroupedNotes.length > 0 && (
+          <>
+            <div className="ungrouped-notes-header">Ungrouped Notes</div>
+            {ungroupedNotes.map((note) => (
+              <NoteItem
+                key={note._id}
+                note={note}
+                isActive={activeNote?._id === note._id}
+                onSelect={() => handleNoteSelect(note)}
+                onDelete={() => onDeleteNote(note._id)}
+                onMove={(groupId) => onMoveNote(note._id, groupId)}
+                groups={groups}
+              />
+            ))}
+          </>
+        )}
+      </div>
+
+      {/* Settings Link */}
+      <div className="sidebar-footer">
+        <Link to="/settings" className="settings-link">
+          <Settings size={20} />
+          <span>Settings</span>
+        </Link>
       </div>
     </div>
   );

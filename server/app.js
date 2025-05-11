@@ -251,6 +251,134 @@ app.post("/login", async (req, res) => {
   }
 });
 
+// ... (existing middleware and routes)
+
+// --- USER PROFILE AND SETTINGS ROUTES ---
+
+// GET User Profile
+app.get("/api/user/profile", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select("username email");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.status(200).json(user);
+  } catch (error) {
+    res
+      .status(500)
+      .json({
+        message: "Error fetching user profile",
+        error: error.toString(),
+      });
+  }
+});
+
+// PUT Update Username
+app.put("/api/user/update-username", auth, async (req, res) => {
+  const { username } = req.body;
+  if (!username || username.trim() === "") {
+    return res.status(400).json({ message: "Username cannot be empty" });
+  }
+  try {
+    const user = await User.findByIdAndUpdate(
+      req.user.userId,
+      { username: username.trim() },
+      { new: true, runValidators: true }
+    ).select("username email");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.status(200).json({ message: "Username updated successfully", user });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Error updating username", error: error.toString() });
+  }
+});
+
+// PUT Change Password
+app.put("/api/user/change-password", auth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    return res
+      .status(400)
+      .json({ message: "Current and new passwords are required" });
+  }
+  if (newPassword.length < 6) {
+    // Consistent with client-side validation
+    return res
+      .status(400)
+      .json({ message: "New password must be at least 6 characters long" });
+  }
+
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const isPasswordMatching = await bcrypt.compare(
+      currentPassword,
+      user.password
+    );
+    if (!isPasswordMatching) {
+      return res.status(401).json({ message: "Incorrect current password" });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    res.status(200).json({ message: "Password changed successfully" });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Error changing password", error: error.toString() });
+  }
+});
+
+// DELETE User Account
+app.delete("/api/user/delete-account", auth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // 1. Delete user's notes
+    await Note.deleteMany({ user: userId });
+
+    // 2. Delete user's groups
+    await Group.deleteMany({ user: userId });
+
+    // 3. Delete user's files (from DB and potentially storage if not just DB)
+    //    If files are stored on disk, you'd need to fs.unlink them here.
+    //    The current setup stores file data in MongoDB.
+    await File.deleteMany({ user: userId });
+
+    // 4. Delete the user
+    const deletedUser = await User.findByIdAndDelete(userId);
+    if (!deletedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Optional: If you have Stripe customer IDs stored and want to delete them from Stripe:
+    // if (deletedUser.stripeCustomerId) {
+    //   try {
+    //     await stripe.customers.del(deletedUser.stripeCustomerId);
+    //   } catch (stripeError) {
+    //     console.error("Error deleting Stripe customer:", stripeError);
+    //     // Don't let Stripe error block account deletion, but log it.
+    //   }
+    // }
+
+    res.status(200).json({ message: "Account deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting account:", error);
+    res
+      .status(500)
+      .json({ message: "Error deleting account", error: error.toString() });
+  }
+});
+
 // Protect the notes route
 // app.get("/notes", auth, (req, res) => {
 //   res.json({ message: "Here are your notes..." });

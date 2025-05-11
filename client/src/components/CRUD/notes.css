@@ -331,6 +331,45 @@ button:disabled {
   background-color: #111827;
 }
 
+.sidebar-footer {
+  margin-top: auto; /* Pushes to the bottom */
+  padding-top: 1rem;
+  border-top: 1px solid #2e3648; /* Optional separator */
+}
+
+.settings-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.5rem;
+  color: #a0aec0; /* Lighter text color */
+  text-decoration: none;
+  border-radius: 4px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.settings-link:hover {
+  background-color: #1f2937;
+  color: white;
+}
+
+.settings-link svg {
+  flex-shrink: 0;
+}
+
+.clear-search-btn,
+.clear-filter-btn {
+  background: none;
+  border: none;
+  color: #a0aec0;
+  cursor: pointer;
+  padding: 0 5px;
+}
+.clear-search-btn:hover,
+.clear-filter-btn:hover {
+  color: white;
+}
+
 /* .sidebar-toggle-btn:hover {
   background-color: #1f2937;
 } */
@@ -635,7 +674,7 @@ button:disabled {
   width: 50%;
   max-width: 50%;
   display: block;
-  position: relative; 
+  position: relative;
   clear: both;
   box-sizing: border-box;
 }
@@ -643,21 +682,21 @@ button:disabled {
 /* Styles for the video element itself within a media-container */
 .media-container video {
   display: block;
-  width: 100%; 
+  width: 100%;
   max-width: 100%;
-  height: auto; 
+  height: auto;
   margin-left: auto;
   margin-right: auto;
   border-radius: 4px;
-  pointer-events: auto; 
+  pointer-events: auto;
 }
 
 /* Styles for the img element itself within a media-container */
 .media-container img {
   display: block;
-  width: 100%; 
+  width: 100%;
   max-width: 100%;
-  height: auto; 
+  height: auto;
   margin-left: auto;
   margin-right: auto;
   border-radius: 4px;
@@ -670,18 +709,18 @@ button:disabled {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background-color: rgba(0, 0, 0, 0.9); 
-  z-index: 2000; 
+  background-color: rgba(0, 0, 0, 0.9);
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 10px; 
+  padding: 10px;
   box-sizing: border-box;
 }
 
 .media-container.fullscreen-active > div:first-child {
-  width: 100%; 
-  height: 100%; 
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -691,10 +730,10 @@ button:disabled {
 .media-container.fullscreen-active video,
 .media-container.fullscreen-active img {
   width: auto;
-  height: auto; 
-  max-width: 100%; 
-  max-height: 100%; 
-  object-fit: contain; 
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
 }
 
 .media-container .fullscreen-button {
@@ -711,24 +750,19 @@ button:disabled {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  z-index: 1; 
-  opacity: 0; 
+  z-index: 1;
+  opacity: 0;
   transition: opacity 0.3s ease;
-  pointer-events: auto; 
+  pointer-events: auto;
 }
 
 .media-container:hover .fullscreen-button {
-  opacity: 1; 
+  opacity: 1;
 }
 
 .media-container.fullscreen-active .fullscreen-button {
   opacity: 1;
-  background-color: rgba(
-    50,
-    50,
-    50,
-    0.7
-  );
+  background-color: rgba(50, 50, 50, 0.7);
   width: 40px;
   height: 40px;
   top: 15px;
@@ -738,7 +772,7 @@ button:disabled {
 .media-container[contenteditable="false"] {
   user-select: none;
   -webkit-user-select: none;
-  pointer-events: auto; 
+  pointer-events: auto;
 }
 
 .image-container img {
@@ -938,12 +972,12 @@ button:disabled {
   }
 
   .media-container {
-    width: 90%; 
+    width: 90%;
     max-width: 90%;
   }
 
   .media-container.fullscreen-active {
-    padding: 0; 
+    padding: 0;
   }
 
   /* Prevent horizontal overflow in media elements */

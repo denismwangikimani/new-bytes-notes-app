@@ -6,6 +6,7 @@ import Notes from "./components/Notes";
 import LandingPage from "./components/LandingPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PaymentConfirmation from "./components/PaymentConfirmation";
+import SettingsPage from "./components/SettingsPage"; 
 
 function App() {
   return (
@@ -15,12 +16,21 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/payment-confirmation" element={<PaymentConfirmation />} />
-        {/* Protect the Notes route */}
+
+        {/* Protected Routes */}
         <Route
           path="/notes"
           element={
             <ProtectedRoute>
               <Notes />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/settings" 
+          element={
+            <ProtectedRoute>
+              <SettingsPage />
             </ProtectedRoute>
           }
         />
