@@ -3,6 +3,7 @@ import axios from "axios";
 import { useNavigate, Link } from "react-router-dom";
 import { CreditCard, Loader } from "lucide-react";
 import { loadStripe } from "@stripe/stripe-js";
+import { GoogleLogin } from '@react-oauth/google';
 import "../App.css";
 import "./Signup.css";
 
@@ -201,9 +202,57 @@ function Signup() {
     }
   }, [clientSecret, step, email, navigate, handlePaymentSuccess]);
 
+  const handleGoogleSignupSuccess = async (credentialResponse) => {
+    setError(null);
+    setIsLoading(true);
+    console.log("Google signup success raw response:", credentialResponse);
+    const tokenId = credentialResponse.credential;
+
+    try {
+      const response = await axios.post(
+        "https://new-bytes-notes-backend.onrender.com/auth/google", // Same backend endpoint
+        { tokenId }
+      );
+      console.log("Backend Google signup response:", response.data);
+      localStorage.setItem("token", response.data.token);
+      // Optionally store user details from response.data.user
+      navigate("/notes");
+    } catch (err) {
+      console.error("Google signup backend error:", err);
+      if (err.response && err.response.data) {
+        setError(err.response.data.message || "Google signup failed.");
+      } else {
+        setError("Google signup failed. Please try again.");
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignupError = (error) => {
+    console.error("Google signup failed on client:", error);
+    setError("Google signup failed. Please try again or ensure cookies are enabled.");
+    setIsLoading(false);
+  };
+
   return (
     <div className="auth-container">
       <h2>Welcome to Byte-Notes!</h2>
+
+      {/* Google Sign up option - Placed prominently */}
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px', marginTop: '10px' }}>
+        <GoogleLogin
+          onSuccess={handleGoogleSignupSuccess}
+          onError={handleGoogleSignupError}
+          useOneTap={false}
+          shape="rectangular"
+          theme="outline"
+          size="large"
+          text="signup_with" // "signin_with", "continue_with", "signup_with", "signin"
+        />
+      </div>
+      <div style={{ textAlign: 'center', margin: '20px 0', color: '#555' }}>OR SIGN UP WITH EMAIL</div>
+
 
       {step === 1 ? (
         <>

@@ -6,36 +6,45 @@ import Notes from "./components/Notes";
 import LandingPage from "./components/LandingPage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PaymentConfirmation from "./components/PaymentConfirmation";
-import SettingsPage from "./components/SettingsPage"; 
+import SettingsPage from "./components/SettingsPage";
+import { GoogleOAuthProvider } from '@react-oauth/google'; 
+
+const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 
 function App() {
+  if (!GOOGLE_CLIENT_ID) {
+    console.error("Google Client ID not found. Make sure REACT_APP_GOOGLE_CLIENT_ID is set in your .env file.");
+    // Optionally render a message or fallback UI
+  }
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
-        <Route path="/payment-confirmation" element={<PaymentConfirmation />} />
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID || "YOUR_GOOGLE_CLIENT_ID_FALLBACK"}> {/* Fallback to prevent crash if env is missing */}
+      <Router>
+        <Routes>
+          <Route path="/" element={<LandingPage />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/payment-confirmation" element={<PaymentConfirmation />} />
 
-        {/* Protected Routes */}
-        <Route
-          path="/notes"
-          element={
-            <ProtectedRoute>
-              <Notes />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/settings" 
-          element={
-            <ProtectedRoute>
-              <SettingsPage />
-            </ProtectedRoute>
-          }
-        />
-      </Routes>
-    </Router>
+          {/* Protected Routes */}
+          <Route
+            path="/notes"
+            element={
+              <ProtectedRoute>
+                <Notes />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <SettingsPage />
+              </ProtectedRoute>
+            }
+          />
+        </Routes>
+      </Router>
+    </GoogleOAuthProvider>
   );
 }
 

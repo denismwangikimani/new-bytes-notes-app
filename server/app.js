@@ -10,6 +10,7 @@ const jwt = require("jsonwebtoken");
 const auth = require("./auth");
 const Group = require("./db/groupModel");
 const File = require("./db/fileModel");
+const { OAuth2Client } = require('google-auth-library');
 const textToSpeech = require("@google-cloud/text-to-speech");
 const { v4: uuidv4 } = require("uuid");
 const path = require("path");
@@ -62,6 +63,10 @@ app.use(express.json());
 
 //stripe connect
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
+
+//google connect
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const googleAuthClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // Step 1: Initiate registration without creating a token
 app.post("/register/initiate", async (req, res) => {
@@ -248,6 +253,93 @@ app.post("/login", async (req, res) => {
     res.status(200).json({ message: "Login successful!", token: token });
   } catch (error) {
     res.status(500).json({ message: "Error logging in user", error });
+  }
+});
+
+// GOOGLE AUTH ROUTE
+app.post("/auth/google", async (req, res) => {
+  const { tokenId } = req.body;
+  try {
+    const ticket = await googleAuthClient.verifyIdToken({
+      idToken: tokenId,
+      audience: GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, email_verified, given_name, family_name } = payload;
+
+    if (!email_verified) {
+      return res.status(400).json({ message: "Google email not verified." });
+    }
+
+    let user = await User.findOne({ googleId });
+
+    if (!user) {
+      // If no user with googleId, check by email to link accounts
+      user = await User.findOne({ email });
+      if (user) {
+        // User exists with this email (signed up via email/password before)
+        user.googleId = googleId;
+        if (!user.isPaid) { // If they weren't paid, mark as paid now
+            user.isPaid = true;
+            user.paymentDate = new Date();
+        }
+        // If user already had a username, keep it. Otherwise, use Google's name.
+        if (!user.username && name) {
+            user.username = name;
+        } else if (!user.username && given_name) {
+            user.username = given_name; // Fallback if 'name' is not available
+        }
+        // Ensure username is unique if it's being set/changed
+        if (user.isModified('username')) {
+            const existingUsername = await User.findOne({ username: user.username, _id: { $ne: user._id } });
+            if (existingUsername) {
+                user.username = `${user.username}_${Date.now().toString().slice(-4)}`; // Append random numbers if duplicate
+            }
+        }
+
+        await user.save();
+      } else {
+        // New user via Google
+        let newUsername = name || given_name || email.split('@')[0]; // Default username logic
+        const existingUsername = await User.findOne({ username: newUsername });
+        if (existingUsername) {
+            newUsername = `${newUsername}_${Date.now().toString().slice(-4)}`; // Append random numbers
+        }
+
+        user = new User({
+          googleId,
+          email,
+          username: newUsername,
+          // Password is not set for Google users
+          isPaid: true, // Assume Google sign-up implies payment for simplicity
+          paymentDate: new Date(),
+        });
+        await user.save();
+      }
+    } else {
+        // User found by googleId, ensure they are marked as paid if they somehow weren't
+        if (!user.isPaid) {
+            user.isPaid = true;
+            user.paymentDate = new Date();
+            await user.save();
+        }
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { email: user.email, userId: user._id.toString(), isPaid: user.isPaid },
+      process.env.JWT_SECRET || "secret", // Use environment variable for secret
+      { expiresIn: "24h" }
+    );
+
+    res.status(200).json({
+      message: "Google authentication successful!",
+      token,
+      user: { email: user.email, username: user.username, isPaid: user.isPaid, userId: user._id },
+    });
+  } catch (error) {
+    console.error("Google auth error:", error);
+    res.status(401).json({ message: "Google authentication failed.", error: error.toString() });
   }
 });
 

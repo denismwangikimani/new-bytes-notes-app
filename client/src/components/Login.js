@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import axios from "axios";
 import { useNavigate, Link } from "react-router-dom";
 import "../App.css";
+import { GoogleLogin } from "@react-oauth/google";
 
 function Login() {
   const [email, setEmail] = useState("");
@@ -11,6 +12,7 @@ function Login() {
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setError(null); // Clear previous errors
     try {
       const response = await axios.post(
         "https://new-bytes-notes-backend.onrender.com/login",
@@ -21,6 +23,7 @@ function Login() {
       );
       console.log("Login response:", response.data);
       localStorage.setItem("token", response.data.token);
+      // Optionally store user details from response.data.user if backend sends them
       navigate("/notes");
     } catch (err) {
       if (err.response && err.response.data) {
@@ -29,6 +32,37 @@ function Login() {
         setError("Login failed. Please try again.");
       }
     }
+  };
+
+  const handleGoogleLoginSuccess = async (credentialResponse) => {
+    setError(null); // Clear previous errors
+    console.log("Google login success raw response:", credentialResponse);
+    const tokenId = credentialResponse.credential;
+
+    try {
+      const response = await axios.post(
+        "https://new-bytes-notes-backend.onrender.com/auth/google",
+        { tokenId }
+      );
+      console.log("Backend Google login response:", response.data);
+      localStorage.setItem("token", response.data.token);
+      // Optionally store user details from response.data.user
+      navigate("/notes");
+    } catch (err) {
+      console.error("Google login backend error:", err);
+      if (err.response && err.response.data) {
+        setError(err.response.data.message || "Google login failed.");
+      } else {
+        setError("Google login failed. Please try again.");
+      }
+    }
+  };
+
+  const handleGoogleLoginError = (error) => {
+    console.error("Google login failed on client:", error);
+    setError(
+      "Google login failed. Please try again or ensure cookies are enabled."
+    );
   };
 
   return (
@@ -51,11 +85,34 @@ function Login() {
           required
         />
         <button type="submit">Login</button>
-        {error && <p>{error}</p>}
-        <p>
-          If you do not have an account, <Link to="/signup">Signup here</Link>
-        </p>
+        {error && (
+          <p style={{ color: "red", textAlign: "center", marginTop: "10px" }}>
+            {error}
+          </p>
+        )}
       </form>
+      <div style={{ textAlign: "center", margin: "20px 0", color: "#555" }}>
+        OR
+      </div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          marginBottom: "20px",
+        }}
+      >
+        <GoogleLogin
+          onSuccess={handleGoogleLoginSuccess}
+          onError={handleGoogleLoginError}
+          useOneTap={false} // Can be true for one-tap sign-in experience
+          shape="rectangular" // "rectangular", "pill", "circle", "square"
+          theme="outline" // "outline", "filled_blue", "filled_black"
+          size="large" // "small", "medium", "large"
+        />
+      </div>
+      <p style={{ textAlign: "center" }}>
+        If you do not have an account, <Link to="/signup">Signup here</Link>
+      </p>
     </div>
   );
 }
