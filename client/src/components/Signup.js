@@ -3,7 +3,7 @@ import axios from "axios";
 import { useNavigate, Link } from "react-router-dom";
 import { CreditCard, Loader } from "lucide-react";
 import { loadStripe } from "@stripe/stripe-js";
-import { GoogleLogin } from '@react-oauth/google';
+import { GoogleLogin } from "@react-oauth/google";
 import "../App.css";
 import "./Signup.css";
 
@@ -85,26 +85,52 @@ function Signup() {
 
   const handlePaymentSuccess = useCallback(
     async (paymentIntent) => {
+      setIsLoading(true);
+      setError(null);
       try {
-        console.log("Payment successful, completing registration");
+        const isGoogleSignup = !!localStorage.getItem("google_temp_user_id");
+        let registrationData;
+        let completeUrl;
 
-        // Complete the registration with payment confirmation
-        const response = await axios.post(
-          "https://new-bytes-notes-backend.onrender.com/register/complete",
-          {
-            email,
-            username,
-            password,
+        if (isGoogleSignup) {
+          registrationData = {
             paymentIntentId: paymentIntent.id,
-          }
+            tempUserId: localStorage.getItem("google_temp_user_id"),
+            email: localStorage.getItem("google_temp_email"), // From Google auth, stored in localStorage
+            username: localStorage.getItem("google_temp_username"), // From Google auth, stored in localStorage
+          };
+          completeUrl =
+            "https://new-bytes-notes-backend.onrender.com/auth/google/complete-payment";
+        } else {
+          // For regular email/password signup, use the component's state variables.
+          // These were the values submitted in step 1.
+          registrationData = {
+            email: email, // Use state variable
+            username: username, // Use state variable
+            password: password, // Use state variable
+            paymentIntentId: paymentIntent.id,
+          };
+          completeUrl =
+            "https://new-bytes-notes-backend.onrender.com/register/complete";
+        }
+
+        console.log(
+          "Completing registration with data:",
+          registrationData,
+          "to URL:",
+          completeUrl
         );
 
-        // Clear temporary storage
+        const response = await axios.post(completeUrl, registrationData);
+
+        // Clear all temporary storage
         localStorage.removeItem("temp_email");
         localStorage.removeItem("temp_username");
         localStorage.removeItem("temp_password");
+        localStorage.removeItem("google_temp_user_id");
+        localStorage.removeItem("google_temp_email");
+        localStorage.removeItem("google_temp_username");
 
-        // Store token and navigate to notes
         localStorage.setItem("token", response.data.token);
         navigate("/notes");
       } catch (err) {
@@ -116,15 +142,15 @@ function Signup() {
           err.response?.data?.message ||
             "Payment confirmed but account activation failed. Please contact support."
         );
+      } finally {
+        setIsLoading(false);
       }
     },
-    [email, username, password, navigate]
+    [navigate, email, username, password]
   );
 
   useEffect(() => {
     if (clientSecret && step === 2) {
-      // When we have the client secret and we're on the payment step,
-      // load the payment element
       const initializePayment = async () => {
         try {
           console.log(
@@ -140,7 +166,6 @@ function Signup() {
             return;
           }
 
-          // Create elements instance
           const elements = stripe.elements({
             clientSecret,
             appearance: {
@@ -154,7 +179,6 @@ function Signup() {
           const paymentElement = elements.create("payment");
           paymentElement.mount("#payment-element");
 
-          // Handle form submission
           const form = document.getElementById("payment-form");
           if (!form) {
             console.error("Payment form not found in DOM");
@@ -162,23 +186,35 @@ function Signup() {
             return;
           }
 
-          form.addEventListener("submit", async (event) => {
+          // Determine the correct email for the receipt
+          // Prioritize Google email if it was a Google signup flow, otherwise use the email from the form state.
+          const emailForReceipt =
+            localStorage.getItem("google_temp_email") || email;
+          console.log("Using email for Stripe receipt:", emailForReceipt);
+
+          // Remove previous event listener if any to prevent multiple submissions
+          const newForm = form.cloneNode(true);
+          form.parentNode.replaceChild(newForm, form);
+
+          newForm.addEventListener("submit", async (event) => {
             event.preventDefault();
             setIsLoading(true);
 
             try {
-              const { error, paymentIntent } = await stripe.confirmPayment({
-                elements,
-                confirmParams: {
-                  return_url: window.location.origin + "/payment-confirmation",
-                  receipt_email: email,
-                },
-                redirect: "if_required",
-              });
+              const { error: stripeError, paymentIntent } =
+                await stripe.confirmPayment({
+                  elements,
+                  confirmParams: {
+                    return_url:
+                      window.location.origin + "/payment-confirmation",
+                    receipt_email: emailForReceipt, // Use the determined email
+                  },
+                  redirect: "if_required",
+                });
 
-              if (error) {
-                console.error("Payment confirmation error:", error);
-                setError(error.message);
+              if (stripeError) {
+                console.error("Payment confirmation error:", stripeError);
+                setError(stripeError.message);
                 setIsLoading(false);
               } else if (
                 paymentIntent &&
@@ -186,10 +222,19 @@ function Signup() {
               ) {
                 console.log("Payment successful, completing registration");
                 await handlePaymentSuccess(paymentIntent);
+              } else {
+                // Handle other statuses if necessary
+                console.log(
+                  "Payment intent status:",
+                  paymentIntent ? paymentIntent.status : "unknown"
+                );
+                setIsLoading(false);
               }
             } catch (err) {
               console.error("Error during payment confirmation:", err);
-              setError("Payment processing error: " + err.message);
+              setError(
+                "Payment processing error: " + (err.message || err.toString())
+              );
               setIsLoading(false);
             }
           });
@@ -200,6 +245,7 @@ function Signup() {
       };
       initializePayment();
     }
+    // Add 'email' to dependency array as it's used in emailForReceipt
   }, [clientSecret, step, email, navigate, handlePaymentSuccess]);
 
   const handleGoogleSignupSuccess = async (credentialResponse) => {
@@ -214,9 +260,39 @@ function Signup() {
         { tokenId }
       );
       console.log("Backend Google signup response:", response.data);
-      localStorage.setItem("token", response.data.token);
-      // Optionally store user details from response.data.user
-      navigate("/notes");
+      if (response.data.token) {
+        // User already paid or doesn't require payment step
+        localStorage.setItem("token", response.data.token);
+        navigate("/notes");
+      } else if (response.data.isPaid === false && response.data.tempUserId) {
+        // Payment required
+        // Set email and username state if you want them to prefill any UI elements,
+        // but primarily store them for the payment intent.
+        // setEmail(backendResponse.data.email); // Optional: if you want to update the main email state
+        // setUsername(backendResponse.data.username || ''); // Optional: if you want to update the main username state
+
+        localStorage.setItem("google_temp_user_id", response.data.tempUserId);
+        localStorage.setItem("google_temp_email", response.data.email);
+        localStorage.setItem(
+          "google_temp_username",
+          response.data.username || ""
+        );
+
+        // Create payment intent for Google user
+        const paymentIntentResponse = await axios.post(
+          "https://new-bytes-notes-backend.onrender.com/create-payment-intent",
+          {
+            email: response.data.email, // Use email from Google response
+            amount: 1800,
+            userId: response.data.tempUserId,
+          }
+        );
+        setClientSecret(paymentIntentResponse.data.clientSecret);
+        setStep(2);
+        setError(null);
+      } else {
+        setError("Google signup failed: Unexpected response from server.");
+      }
     } catch (err) {
       console.error("Google signup backend error:", err);
       if (err.response && err.response.data) {
@@ -231,28 +307,15 @@ function Signup() {
 
   const handleGoogleSignupError = (error) => {
     console.error("Google signup failed on client:", error);
-    setError("Google signup failed. Please try again or ensure cookies are enabled.");
+    setError(
+      "Google signup failed. Please try again or ensure cookies are enabled."
+    );
     setIsLoading(false);
   };
 
   return (
     <div className="auth-container">
       <h2>Welcome to Byte-Notes!</h2>
-
-      {/* Google Sign up option - Placed prominently */}
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px', marginTop: '10px' }}>
-        <GoogleLogin
-          onSuccess={handleGoogleSignupSuccess}
-          onError={handleGoogleSignupError}
-          useOneTap={false}
-          shape="rectangular"
-          theme="outline"
-          size="large"
-          text="signup_with" // "signin_with", "continue_with", "signup_with", "signin"
-        />
-      </div>
-      <div style={{ textAlign: 'center', margin: '20px 0', color: '#555' }}>OR SIGN UP WITH EMAIL</div>
-
 
       {step === 1 ? (
         <>
@@ -268,7 +331,7 @@ function Signup() {
           </div>
 
           <form onSubmit={handleNextStep} className="auth-form">
-            <h3>Create Your Account</h3>
+            <h3>Create Your Account (Email & Password)</h3>
             <input
               type="email"
               value={email}
@@ -306,12 +369,38 @@ function Signup() {
                 </>
               )}
             </button>
-            {error && <p className="error-message">{error}</p>}
-            <p className="login-link">
-              If you already have an account,{" "}
-              <Link to="/login">Login here</Link>
-            </p>
+            {error && !isLoading && <p className="error-message">{error}</p>} {/* Show error only if not loading */}
           </form>
+
+          {/* "OR" separator and Google Sign up option */}
+          <div style={{ textAlign: "center", margin: "20px 0", color: "#555" }}>
+            OR
+          </div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              marginBottom: "20px",
+              // marginTop: "10px", // Adjusted margin
+            }}
+          >
+            <GoogleLogin
+              onSuccess={handleGoogleSignupSuccess}
+              onError={handleGoogleSignupError}
+              useOneTap={false}
+              shape="rectangular"
+              theme="outline"
+              size="large"
+              text="signup_with"
+            />
+          </div>
+          {error && isLoading && <p className="error-message">{error}</p>} {/* Show error related to Google if loading */}
+
+
+          <p className="login-link" style={{ marginTop: '20px' }}> {/* Ensure this is last */}
+            If you already have an account,{" "}
+            <Link to="/login">Login here</Link>
+          </p>
         </>
       ) : (
         <div className="payment-container">
@@ -341,7 +430,10 @@ function Signup() {
 
           <button
             className="back-button"
-            onClick={() => setStep(1)}
+            onClick={() => {
+              setError(null); // Clear errors when going back
+              setStep(1);
+            }}
             disabled={isLoading}
           >
             Back to Account Details

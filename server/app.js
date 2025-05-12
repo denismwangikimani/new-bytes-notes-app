@@ -10,7 +10,7 @@ const jwt = require("jsonwebtoken");
 const auth = require("./auth");
 const Group = require("./db/groupModel");
 const File = require("./db/fileModel");
-const { OAuth2Client } = require('google-auth-library');
+const { OAuth2Client } = require("google-auth-library");
 const textToSpeech = require("@google-cloud/text-to-speech");
 const { v4: uuidv4 } = require("uuid");
 const path = require("path");
@@ -185,6 +185,7 @@ app.post("/register/complete", async (req, res) => {
       password: await bcrypt.hash(password, 10),
       isPaid: true,
       paymentDate: new Date(),
+      stripeCustomerId: paymentIntent.customer,
     });
 
     await user.save();
@@ -192,11 +193,11 @@ app.post("/register/complete", async (req, res) => {
     // Create and send token
     const token = jwt.sign(
       {
-        userId: user._id,
+        userId: user._id.toString(),
         userEmail: user.email,
-        isPaid: true,
+        isPaid: user.isPaid,
       },
-      "secret",
+      process.env.JWT_SECRET || "secret",
       { expiresIn: "24h" }
     );
 
@@ -242,8 +243,8 @@ app.post("/login", async (req, res) => {
 
     // Create a JWT token if the password is correct
     const token = jwt.sign(
-      { email: user.email, userId: user._id.toString() },
-      "secret",
+      { email: user.email, userId: user._id.toString(), isPaid: user.isPaid },
+      process.env.JWT_SECRET || "secret",
       {
         expiresIn: "24h",
       }
@@ -252,7 +253,7 @@ app.post("/login", async (req, res) => {
     // Respond with the token if the user is logged in successfully
     res.status(200).json({ message: "Login successful!", token: token });
   } catch (error) {
-    res.status(500).json({ message: "Error logging in user", error });
+    res.status(500).json({ message: "Error logging in user", error: error.toString() });
   }
 });
 
@@ -265,7 +266,14 @@ app.post("/auth/google", async (req, res) => {
       audience: GOOGLE_CLIENT_ID,
     });
     const payload = ticket.getPayload();
-    const { sub: googleId, email, name, email_verified, given_name, family_name } = payload;
+    const {
+      sub: googleId,
+      email,
+      name,
+      email_verified,
+      given_name,
+      family_name,
+    } = payload;
 
     if (!email_verified) {
       return res.status(400).json({ message: "Google email not verified." });
@@ -276,25 +284,32 @@ app.post("/auth/google", async (req, res) => {
 
     if (!user) {
       user = await User.findOne({ email });
-      if (user) { // User exists with this email, link Google ID
+      if (user) {
+        // User exists with this email, link Google ID
         if (!user.googleId) user.googleId = googleId;
         if (!user.isPaid) isNewUserOrUnpaid = true;
         // Update username if not set and Google provides one
         if (!user.username && name) user.username = name;
         else if (!user.username && given_name) user.username = given_name;
-        if (user.isModified('username')) {
-            const existingUsername = await User.findOne({ username: user.username, _id: { $ne: user._id } });
-            if (existingUsername) {
-                user.username = `${user.username}_${Date.now().toString().slice(-4)}`;
-            }
+        if (user.isModified("username")) {
+          const existingUsername = await User.findOne({
+            username: user.username,
+            _id: { $ne: user._id },
+          });
+          if (existingUsername) {
+            user.username = `${user.username}_${Date.now()
+              .toString()
+              .slice(-4)}`;
+          }
         }
         await user.save();
-      } else { // New user via Google
+      } else {
+        // New user via Google
         isNewUserOrUnpaid = true;
-        let newUsername = name || given_name || email.split('@')[0];
+        let newUsername = name || given_name || email.split("@")[0];
         const existingUsername = await User.findOne({ username: newUsername });
         if (existingUsername) {
-            newUsername = `${newUsername}_${Date.now().toString().slice(-4)}`;
+          newUsername = `${newUsername}_${Date.now().toString().slice(-4)}`;
         }
         user = new User({
           googleId,
@@ -305,18 +320,20 @@ app.post("/auth/google", async (req, res) => {
         });
         await user.save();
       }
-    } else { // User found by googleId
-        if (!user.isPaid) isNewUserOrUnpaid = true;
+    } else {
+      // User found by googleId
+      if (!user.isPaid) isNewUserOrUnpaid = true;
     }
 
-    if (isNewUserOrUnpaid && !user.isPaid) { // Check user.isPaid again in case an existing user was already paid
+    if (isNewUserOrUnpaid && !user.isPaid) {
+      // Check user.isPaid again in case an existing user was already paid
       // User needs to pay
       return res.status(200).json({
         message: "Google authentication successful, payment required.",
         email: user.email,
         tempUserId: user._id.toString(), // Send temp ID to link payment
         isPaid: false,
-        username: user.username // Send username if available
+        username: user.username, // Send username if available
       });
     }
 
@@ -330,12 +347,19 @@ app.post("/auth/google", async (req, res) => {
     res.status(200).json({
       message: "Google authentication successful!",
       token,
-      user: { email: user.email, username: user.username, isPaid: user.isPaid, userId: user._id },
+      user: {
+        email: user.email,
+        username: user.username,
+        isPaid: user.isPaid,
+        userId: user._id,
+      },
     });
-
   } catch (error) {
     console.error("Google auth error:", error);
-    res.status(401).json({ message: "Google authentication failed.", error: error.toString() });
+    res.status(401).json({
+      message: "Google authentication failed.",
+      error: error.toString(),
+    });
   }
 });
 
@@ -344,16 +368,25 @@ app.post("/auth/google", async (req, res) => {
 app.post("/auth/google/complete-payment", async (req, res) => {
   const { paymentIntentId, tempUserId, email, username } = req.body; // email and username might be needed if not stored with tempUserId
 
-  console.log("Google complete payment request:", { paymentIntentId, tempUserId, email, username });
+  console.log("Google complete payment request:", {
+    paymentIntentId,
+    tempUserId,
+    email,
+    username,
+  });
 
   if (!paymentIntentId || !tempUserId) {
-    return res.status(400).json({ message: "Payment Intent ID and User ID are required." });
+    return res
+      .status(400)
+      .json({ message: "Payment Intent ID and User ID are required." });
   }
 
   try {
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
     if (paymentIntent.status !== "succeeded") {
-      return res.status(400).json({ message: "Payment not completed successfully." });
+      return res
+        .status(400)
+        .json({ message: "Payment not completed successfully." });
     }
 
     const user = await User.findById(tempUserId);
@@ -363,7 +396,9 @@ app.post("/auth/google/complete-payment", async (req, res) => {
       // const userByEmail = await User.findOne({ email });
       // if (!userByEmail) return res.status(404).json({ message: "User not found." });
       // user = userByEmail;
-       return res.status(404).json({ message: "User not found with tempUserId." });
+      return res
+        .status(404)
+        .json({ message: "User not found with tempUserId." });
     }
 
     user.isPaid = true;
@@ -371,8 +406,8 @@ app.post("/auth/google/complete-payment", async (req, res) => {
     user.stripeCustomerId = paymentIntent.customer; // Store Stripe Customer ID
     // Ensure username is set if it wasn't during initial Google auth step
     if (!user.username && username) user.username = username;
-    else if (!user.username && paymentIntent.metadata.email) user.username = paymentIntent.metadata.email.split('@')[0];
-
+    else if (!user.username && paymentIntent.metadata.email)
+      user.username = paymentIntent.metadata.email.split("@")[0];
 
     await user.save();
 
@@ -385,11 +420,19 @@ app.post("/auth/google/complete-payment", async (req, res) => {
     res.status(200).json({
       message: "Google registration and payment successful!",
       token,
-      user: { email: user.email, username: user.username, isPaid: user.isPaid, userId: user._id },
+      user: {
+        email: user.email,
+        username: user.username,
+        isPaid: user.isPaid,
+        userId: user._id,
+      },
     });
   } catch (error) {
     console.error("Error completing Google payment registration:", error);
-    res.status(500).json({ message: "Error completing registration after Google payment.", error: error.toString() });
+    res.status(500).json({
+      message: "Error completing registration after Google payment.",
+      error: error.toString(),
+    });
   }
 });
 
@@ -406,12 +449,10 @@ app.get("/api/user/profile", auth, async (req, res) => {
     }
     res.status(200).json(user);
   } catch (error) {
-    res
-      .status(500)
-      .json({
-        message: "Error fetching user profile",
-        error: error.toString(),
-      });
+    res.status(500).json({
+      message: "Error fetching user profile",
+      error: error.toString(),
+    });
   }
 });
 
