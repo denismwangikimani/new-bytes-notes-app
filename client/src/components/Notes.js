@@ -14,8 +14,9 @@ const NotesContent = () => {
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [lastQuery, setLastQuery] = useState({ type: "all", params: null });
-  const { isSidebarOpen } = useSidebar();
+  const { isSidebarOpen, toggleSidebar } = useSidebar();
   const [groups, setGroups] = useState([]);
+  
   const navigate = useNavigate();
 
   const API_BASE_URL = "https://new-bytes-notes-backend.onrender.com";
@@ -209,7 +210,7 @@ const NotesContent = () => {
     setIsLoading(true);
     try {
       const api = getApi();
-      if (!api) return; // Exit if no valid API instance
+      if (!api) return;
 
       const response = await api.post("/notes", {
         title: "Untitled Note",
@@ -218,7 +219,6 @@ const NotesContent = () => {
 
       const newNote = response.data.note;
 
-      // If we're in a filtered view, fetch all notes
       if (lastQuery.type !== "all") {
         await fetchNotes();
       } else {
@@ -226,8 +226,15 @@ const NotesContent = () => {
       }
 
       setActiveNote(newNote);
-      // Clear any previous errors on successful create
       setError(null);
+
+      // Add this check to close sidebar on mobile if it's open
+      if (window.innerWidth <= 768) {
+        if (isSidebarOpen) {
+          // Only toggle if the sidebar is currently open
+          toggleSidebar();
+        }
+      }
     } catch (error) {
       setError(error.message || "Error creating note");
       console.error("Create note error:", error);

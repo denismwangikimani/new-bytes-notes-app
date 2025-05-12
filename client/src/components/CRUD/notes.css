@@ -277,43 +277,6 @@ button:disabled {
   transform: translateX(-250px);
 }
 
-/* Mobile styles */
-@media screen and (max-width: 768px) {
-  .notes-container {
-    flex-direction: column;
-  }
-
-  .notes-sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 100;
-    background-color: #111827;
-    transform: translateX(-100%);
-    transition: transform 0.3s ease;
-  }
-
-  .notes-sidebar.open {
-    transform: translateX(0);
-  }
-
-  .notes-sidebar.hidden {
-    transform: translateX(-100%);
-  }
-
-  /* Hide the editor when sidebar is open */
-  .notes-sidebar.open ~ .editor-container {
-    display: none;
-  }
-
-  /* Ensure the editor fills the screen when sidebar is closed */
-  .editor-container {
-    width: 100%;
-  }
-}
-
 /* Additional CSS to add to notes.css */
 .sidebar-header {
   display: flex;
@@ -333,9 +296,9 @@ button:disabled {
 }
 
 .sidebar-footer {
-  margin-top: auto; 
+  margin-top: auto;
   padding-top: 1rem;
-  border-top: 1px solid #2e3648; 
+  border-top: 1px solid #2e3648;
   margin-bottom: 1rem;
 }
 
@@ -441,21 +404,6 @@ button:disabled {
   border: none;
   outline: none;
   resize: none;
-}
-
-/* Keep existing responsive styles */
-@media (max-width: 768px) {
-  .editor-header {
-    padding: 0.5rem;
-  }
-
-  .editor-controls {
-    margin-left: 0.5rem;
-  }
-
-  .editor-content-wrapper {
-    padding: 0.75rem;
-  }
 }
 
 /* Ensure the sidebar toggle and create button are properly ordered */
@@ -925,7 +873,7 @@ button:disabled {
   padding: 5px 0;
 }
 
-/* Mobile view optimizations - add to the end of your notes.css file */
+/* Mobile view optimizations */
 @media (max-width: 768px) {
   .notes-container {
     flex-direction: column;
@@ -937,18 +885,29 @@ button:disabled {
     position: fixed;
     top: 0;
     left: 0;
-    width: 100vw;
-    height: 100vh;
-    z-index: 1000;
+    width: 100%;
+    height: 100%;
+    z-index: 100;
+    background-color: #111827;
     transform: translateX(-100%);
+    transition: transform 0.3s ease;
   }
 
   .notes-sidebar.open {
     transform: translateX(0);
   }
 
+  .notes-sidebar.closed {
+    transform: translateX(-100%) !important; 
+  }
+
+  /* When sidebar is open, hide the editor part */
+  .notes-sidebar.open ~ .editor-container {
+    display: none;
+  }
+
   .editor-container {
-    width: 100vw;
+    width: 100%;
     max-width: 100vw;
     overflow-x: hidden;
   }
@@ -971,6 +930,14 @@ button:disabled {
     max-width: 100vw;
     padding: 1rem;
     overflow-x: hidden;
+  }
+
+  .editor-header {
+    padding: 0.5rem;
+  }
+
+  .editor-controls {
+    margin-left: 0.5rem;
   }
 
   .media-container {

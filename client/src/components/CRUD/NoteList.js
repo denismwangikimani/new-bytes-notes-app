@@ -34,6 +34,7 @@ const NotesList = ({
   const [expandedGroups, setExpandedGroups] = useState({});
   const [newGroupName, setNewGroupName] = useState("");
   const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+  console.log("NoteList isSidebarOpen:", isSidebarOpen);
 
   // Initialize all groups as expanded
   useEffect(() => {
@@ -86,7 +87,11 @@ const NotesList = ({
   const handleNoteSelect = (note) => {
     onNoteSelect(note);
     if (window.innerWidth <= 768) {
-      toggleSidebar();
+      console.log("Mobile note select, current isSidebarOpen:", isSidebarOpen);
+      if (isSidebarOpen) {
+        toggleSidebar();
+        console.log("Called toggleSidebar to close");
+      }
     }
   };
 
