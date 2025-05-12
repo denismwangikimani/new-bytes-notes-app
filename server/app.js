@@ -272,63 +272,58 @@ app.post("/auth/google", async (req, res) => {
     }
 
     let user = await User.findOne({ googleId });
+    let isNewUserOrUnpaid = false;
 
     if (!user) {
-      // If no user with googleId, check by email to link accounts
       user = await User.findOne({ email });
-      if (user) {
-        // User exists with this email (signed up via email/password before)
-        user.googleId = googleId;
-        if (!user.isPaid) { // If they weren't paid, mark as paid now
-            user.isPaid = true;
-            user.paymentDate = new Date();
-        }
-        // If user already had a username, keep it. Otherwise, use Google's name.
-        if (!user.username && name) {
-            user.username = name;
-        } else if (!user.username && given_name) {
-            user.username = given_name; // Fallback if 'name' is not available
-        }
-        // Ensure username is unique if it's being set/changed
+      if (user) { // User exists with this email, link Google ID
+        if (!user.googleId) user.googleId = googleId;
+        if (!user.isPaid) isNewUserOrUnpaid = true;
+        // Update username if not set and Google provides one
+        if (!user.username && name) user.username = name;
+        else if (!user.username && given_name) user.username = given_name;
         if (user.isModified('username')) {
             const existingUsername = await User.findOne({ username: user.username, _id: { $ne: user._id } });
             if (existingUsername) {
-                user.username = `${user.username}_${Date.now().toString().slice(-4)}`; // Append random numbers if duplicate
+                user.username = `${user.username}_${Date.now().toString().slice(-4)}`;
             }
         }
-
         await user.save();
-      } else {
-        // New user via Google
-        let newUsername = name || given_name || email.split('@')[0]; // Default username logic
+      } else { // New user via Google
+        isNewUserOrUnpaid = true;
+        let newUsername = name || given_name || email.split('@')[0];
         const existingUsername = await User.findOne({ username: newUsername });
         if (existingUsername) {
-            newUsername = `${newUsername}_${Date.now().toString().slice(-4)}`; // Append random numbers
+            newUsername = `${newUsername}_${Date.now().toString().slice(-4)}`;
         }
-
         user = new User({
           googleId,
           email,
           username: newUsername,
-          // Password is not set for Google users
-          isPaid: true, // Assume Google sign-up implies payment for simplicity
-          paymentDate: new Date(),
+          isPaid: false, // Will be set to true after payment
+          // paymentDate will be set after payment
         });
         await user.save();
       }
-    } else {
-        // User found by googleId, ensure they are marked as paid if they somehow weren't
-        if (!user.isPaid) {
-            user.isPaid = true;
-            user.paymentDate = new Date();
-            await user.save();
-        }
+    } else { // User found by googleId
+        if (!user.isPaid) isNewUserOrUnpaid = true;
     }
 
-    // Generate JWT token
+    if (isNewUserOrUnpaid && !user.isPaid) { // Check user.isPaid again in case an existing user was already paid
+      // User needs to pay
+      return res.status(200).json({
+        message: "Google authentication successful, payment required.",
+        email: user.email,
+        tempUserId: user._id.toString(), // Send temp ID to link payment
+        isPaid: false,
+        username: user.username // Send username if available
+      });
+    }
+
+    // User is already paid, generate JWT token
     const token = jwt.sign(
       { email: user.email, userId: user._id.toString(), isPaid: user.isPaid },
-      process.env.JWT_SECRET || "secret", // Use environment variable for secret
+      process.env.JWT_SECRET || "secret",
       { expiresIn: "24h" }
     );
 
@@ -337,9 +332,64 @@ app.post("/auth/google", async (req, res) => {
       token,
       user: { email: user.email, username: user.username, isPaid: user.isPaid, userId: user._id },
     });
+
   } catch (error) {
     console.error("Google auth error:", error);
     res.status(401).json({ message: "Google authentication failed.", error: error.toString() });
+  }
+});
+
+// Modify or create a new endpoint for completing Google registration after payment
+// This is similar to /register/complete but might only need paymentIntentId and tempUserId
+app.post("/auth/google/complete-payment", async (req, res) => {
+  const { paymentIntentId, tempUserId, email, username } = req.body; // email and username might be needed if not stored with tempUserId
+
+  console.log("Google complete payment request:", { paymentIntentId, tempUserId, email, username });
+
+  if (!paymentIntentId || !tempUserId) {
+    return res.status(400).json({ message: "Payment Intent ID and User ID are required." });
+  }
+
+  try {
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+    if (paymentIntent.status !== "succeeded") {
+      return res.status(400).json({ message: "Payment not completed successfully." });
+    }
+
+    const user = await User.findById(tempUserId);
+    if (!user) {
+      // This case should ideally not happen if tempUserId is valid
+      // Fallback: try to find by email if user somehow wasn't created with tempUserId
+      // const userByEmail = await User.findOne({ email });
+      // if (!userByEmail) return res.status(404).json({ message: "User not found." });
+      // user = userByEmail;
+       return res.status(404).json({ message: "User not found with tempUserId." });
+    }
+
+    user.isPaid = true;
+    user.paymentDate = new Date();
+    user.stripeCustomerId = paymentIntent.customer; // Store Stripe Customer ID
+    // Ensure username is set if it wasn't during initial Google auth step
+    if (!user.username && username) user.username = username;
+    else if (!user.username && paymentIntent.metadata.email) user.username = paymentIntent.metadata.email.split('@')[0];
+
+
+    await user.save();
+
+    const token = jwt.sign(
+      { email: user.email, userId: user._id.toString(), isPaid: user.isPaid },
+      process.env.JWT_SECRET || "secret",
+      { expiresIn: "24h" }
+    );
+
+    res.status(200).json({
+      message: "Google registration and payment successful!",
+      token,
+      user: { email: user.email, username: user.username, isPaid: user.isPaid, userId: user._id },
+    });
+  } catch (error) {
+    console.error("Error completing Google payment registration:", error);
+    res.status(500).json({ message: "Error completing registration after Google payment.", error: error.toString() });
   }
 });
 
