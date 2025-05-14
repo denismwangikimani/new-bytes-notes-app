@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useNavigate, Link } from "react-router-dom";
@@ -31,11 +32,14 @@ function Signup() {
   const navigate = useNavigate();
 
   // Store tempUserId from backend to link payment
-  const [setTempUserId] = useState(null);
+  const [tempUserId, setTempUserId] = useState(null);
 
   // Store Stripe elements and instance references
   const [stripeElement, setStripeElement] = useState(null);
   const [stripeInstance, setStripeInstance] = useState(null);
+
+  // API Base URL - centralized for easy switching between environments
+  const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "https://new-bytes-notes-backend.onrender.com";
 
   const handleNextStep = async (e) => {
     // For Email/Password signup
@@ -52,12 +56,22 @@ function Signup() {
     setError(null);
 
     try {
+      console.log("Initiating email signup with:", { email, username, password: "******" });
+      
       // Step 1: Initiate Email Signup
       const initiateResponse = await axios.post(
-        "https://new-bytes-notes-backend.onrender.com/initiate-email-signup",
-        { email, username, password } // Send password here for validation, backend won't store it yet
+        `${API_BASE_URL}/initiate-email-signup`,
+        { email, username, password },
+        { 
+          headers: { 
+            'Content-Type': 'application/json',
+            // Include CORS headers if needed
+            'Accept': 'application/json'
+          } 
+        }
       );
 
+      console.log("Initiate response:", initiateResponse.data);
       const currentTempUserId = initiateResponse.data.tempUserId;
       setTempUserId(currentTempUserId); // Store tempUserId from backend
 
@@ -68,16 +82,20 @@ function Signup() {
       localStorage.setItem("temp_password", password); // Store password to send at final step
 
       // Step 2: Create Payment Session
+      console.log("Creating payment session for tempUserId:", currentTempUserId);
       const paymentResponse = await axios.post(
-        "https://new-bytes-notes-backend.onrender.com/create-payment-session",
+        `${API_BASE_URL}/create-payment-session`,
         {
           tempUserId: currentTempUserId,
           email: email, // For Stripe customer and receipt
         }
       );
+      
+      console.log("Payment session created:", paymentResponse.data);
       setClientSecret(paymentResponse.data.clientSecret);
       setStep(2);
     } catch (err) {
+      console.error("Signup error:", err);
       setError(
         err.response?.data?.message ||
           "Failed to initiate signup. Please try again."
@@ -93,11 +111,15 @@ function Signup() {
     const tokenId = credentialResponse.credential;
 
     try {
+      console.log("Google signup with token ID:", tokenId.substring(0, 10) + "...");
+      
       // Step 1: Initiate Google Signup
       const initiateResponse = await axios.post(
-        "https://new-bytes-notes-backend.onrender.com/google/initiate-signup",
+        `${API_BASE_URL}/google/initiate-signup`,
         { tokenId }
       );
+
+      console.log("Google signup response:", initiateResponse.data);
 
       if (initiateResponse.data.token) {
         // User already exists and is paid
@@ -123,19 +145,23 @@ function Signup() {
         localStorage.setItem("google_temp_username", googleUsername || "");
 
         // Step 2: Create Payment Session for Google user
+        console.log("Creating payment session for Google user:", googleTempUserId);
         const paymentResponse = await axios.post(
-          "https://new-bytes-notes-backend.onrender.com/create-payment-session",
+          `${API_BASE_URL}/create-payment-session`,
           {
             tempUserId: googleTempUserId,
             email: googleEmail, // Use email from Google response for Stripe
           }
         );
+        
+        console.log("Payment session created for Google user:", paymentResponse.data);
         setClientSecret(paymentResponse.data.clientSecret);
         setStep(2);
       } else {
         setError("Google signup failed: Unexpected response from server.");
       }
     } catch (err) {
+      console.error("Google signup error:", err);
       setError(
         err.response?.data?.message || "Google signup failed. Please try again."
       );
@@ -175,11 +201,17 @@ function Signup() {
         throw new Error("Invalid signup method");
       }
 
+      console.log("Completing registration after payment:", {
+        ...registrationData,
+        password: registrationData.password ? "******" : undefined
+      });
+
       const response = await axios.post(
-        "https://new-bytes-notes-backend.onrender.com/complete-payment",
+        `${API_BASE_URL}/complete-payment`,
         registrationData
       );
 
+      console.log("Registration complete:", response.data);
       localStorage.setItem("token", response.data.token);
 
       // Clear temporary storage
@@ -195,6 +227,7 @@ function Signup() {
 
       navigate("/notes");
     } catch (err) {
+      console.error("Registration completion error:", err);
       setError(
         err.response?.data?.message ||
           "Payment confirmed but account activation failed. Please contact support."
@@ -223,6 +256,7 @@ function Signup() {
     }
 
     try {
+      console.log("Confirming payment with Stripe");
       const { error: stripeError, paymentIntent } =
         await stripeInstance.confirmPayment({
           elements: stripeElement,
@@ -234,18 +268,22 @@ function Signup() {
         });
 
       if (stripeError) {
+        console.error("Stripe payment error:", stripeError);
         setError(stripeError.message || "Payment failed.");
       } else if (paymentIntent && paymentIntent.status === "succeeded") {
         // Payment succeeded without redirect
+        console.log("Payment succeeded without redirect:", paymentIntent.id);
         await completeRegistrationAfterPayment(paymentIntent.id);
       } else if (paymentIntent && paymentIntent.status === "requires_action") {
         // Additional action needed, Stripe handles redirect if configured.
+        console.log("Payment requires additional action");
         setError(
           "Further action required to complete payment. Please follow the prompts."
         );
       }
       // If no paymentIntent, redirect is happening, handled by PaymentConfirmation.js
     } catch (err) {
+      console.error("Payment processing error:", err);
       setError(err.message || "An error occurred processing your payment.");
     } finally {
       setIsLoading(false);
@@ -259,6 +297,7 @@ function Signup() {
     if (clientSecret && step === 2) {
       const initializePayment = async () => {
         try {
+          console.log("Initializing Stripe payment with client secret");
           // Get a new instance of stripe
           const stripe = await stripePromise;
           if (!stripe || !mounted) {
@@ -283,6 +322,7 @@ function Signup() {
             }
           }
         } catch (error) {
+          console.error("Stripe initialization error:", error);
           if (mounted) {
             setError("Failed to initialize payment system: " + error.message);
           }
