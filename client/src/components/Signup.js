@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "axios";
 import { useNavigate, Link } from "react-router-dom";
 import { CreditCard, Loader } from "lucide-react";
@@ -31,7 +31,11 @@ function Signup() {
   const navigate = useNavigate();
 
   // Store tempUserId from backend to link payment
-  const [tempUserId, setTempUserId] = useState(null);
+  const [setTempUserId] = useState(null);
+
+  // Store Stripe elements and instance references
+  const [stripeElement, setStripeElement] = useState(null);
+  const [stripeInstance, setStripeInstance] = useState(null);
 
   const handleNextStep = async (e) => {
     // For Email/Password signup
@@ -58,8 +62,6 @@ function Signup() {
       setTempUserId(currentTempUserId); // Store tempUserId from backend
 
       // Store details needed for final completion in localStorage
-      // The backend will re-verify these against the preliminary record if needed,
-      // but password must be sent again.
       localStorage.setItem("signup_method", "email");
       localStorage.setItem("temp_email", email);
       localStorage.setItem("temp_username", username);
@@ -117,7 +119,6 @@ function Signup() {
 
         localStorage.setItem("signup_method", "google");
         localStorage.setItem("google_temp_user_id", googleTempUserId);
-        // email and username from Google response might be useful for display or Stripe customer
         localStorage.setItem("google_temp_email", googleEmail);
         localStorage.setItem("google_temp_username", googleUsername || "");
 
@@ -152,154 +153,174 @@ function Signup() {
   };
 
   // This function is called if Stripe's confirmPayment succeeds WITHOUT a redirect
-  const completeRegistrationAfterPayment = useCallback(
-    async (paymentIntentId) => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const signupMethod = localStorage.getItem("signup_method");
-        let registrationData = {
-          paymentIntentId,
-          signupMethod,
-        };
+  const completeRegistrationAfterPayment = async (paymentIntentId) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const signupMethod = localStorage.getItem("signup_method");
+      let registrationData = {
+        paymentIntentId,
+        signupMethod,
+      };
 
-        if (signupMethod === "email") {
-          registrationData.email = localStorage.getItem("temp_email");
-          registrationData.username = localStorage.getItem("temp_username");
-          registrationData.password = localStorage.getItem("temp_password"); // Send password again
-        } else if (signupMethod === "google") {
-          registrationData.tempUserId = localStorage.getItem(
-            "google_temp_user_id"
-          );
-        } else {
-          throw new Error("Invalid signup method");
-        }
-
-        const response = await axios.post(
-          "https://new-bytes-notes-backend.onrender.com/complete-payment",
-          registrationData
+      if (signupMethod === "email") {
+        registrationData.email = localStorage.getItem("temp_email");
+        registrationData.username = localStorage.getItem("temp_username");
+        registrationData.password = localStorage.getItem("temp_password"); // Send password again
+      } else if (signupMethod === "google") {
+        registrationData.tempUserId = localStorage.getItem(
+          "google_temp_user_id"
         );
-
-        localStorage.setItem("token", response.data.token);
-
-        // Clear temporary storage
-        localStorage.removeItem("signup_method");
-        localStorage.removeItem("temp_email");
-        localStorage.removeItem("temp_username");
-        localStorage.removeItem("temp_password");
-        localStorage.removeItem("google_temp_user_id");
-        localStorage.removeItem("google_temp_email");
-        localStorage.removeItem("google_temp_username");
-
-        setTempUserId(null); // Clear tempUserId state
-
-        navigate("/notes");
-      } catch (err) {
-        setError(
-          err.response?.data?.message ||
-            "Payment confirmed but account activation failed. Please contact support."
-        );
-      } finally {
-        setIsLoading(false);
+      } else {
+        throw new Error("Invalid signup method");
       }
-    },
-    [navigate]
-  );
+
+      const response = await axios.post(
+        "https://new-bytes-notes-backend.onrender.com/complete-payment",
+        registrationData
+      );
+
+      localStorage.setItem("token", response.data.token);
+
+      // Clear temporary storage
+      localStorage.removeItem("signup_method");
+      localStorage.removeItem("temp_email");
+      localStorage.removeItem("temp_username");
+      localStorage.removeItem("temp_password");
+      localStorage.removeItem("google_temp_user_id");
+      localStorage.removeItem("google_temp_email");
+      localStorage.removeItem("google_temp_username");
+
+      setTempUserId(null); // Clear tempUserId state
+
+      navigate("/notes");
+    } catch (err) {
+      setError(
+        err.response?.data?.message ||
+          "Payment confirmed but account activation failed. Please contact support."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePaymentSubmit = async (event) => {
+    event.preventDefault();
+
+    if (isLoading || !stripeInstance || !stripeElement) {
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    const signupMethod = localStorage.getItem("signup_method");
+    let emailForReceipt = "";
+    if (signupMethod === "email") {
+      emailForReceipt = localStorage.getItem("temp_email");
+    } else if (signupMethod === "google") {
+      emailForReceipt = localStorage.getItem("google_temp_email");
+    }
+
+    try {
+      const { error: stripeError, paymentIntent } =
+        await stripeInstance.confirmPayment({
+          elements: stripeElement,
+          confirmParams: {
+            return_url: `${window.location.origin}/payment-confirmation`, // For redirect scenario
+            receipt_email: emailForReceipt,
+          },
+          redirect: "if_required", // Important for handling SCA
+        });
+
+      if (stripeError) {
+        setError(stripeError.message || "Payment failed.");
+      } else if (paymentIntent && paymentIntent.status === "succeeded") {
+        // Payment succeeded without redirect
+        await completeRegistrationAfterPayment(paymentIntent.id);
+      } else if (paymentIntent && paymentIntent.status === "requires_action") {
+        // Additional action needed, Stripe handles redirect if configured.
+        setError(
+          "Further action required to complete payment. Please follow the prompts."
+        );
+      }
+      // If no paymentIntent, redirect is happening, handled by PaymentConfirmation.js
+    } catch (err) {
+      setError(err.message || "An error occurred processing your payment.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (clientSecret && step === 2 && tempUserId) {
+    let mounted = true;
+    let paymentElementInstance = null;
+
+    if (clientSecret && step === 2) {
       const initializePayment = async () => {
-        // ... (Stripe elements initialization logic - mostly the same) ...
-        // Ensure you get stripe instance:
-        const stripe = await stripePromise;
-        if (!stripe) {
-          setError("Could not initialize payment system.");
-          return;
+        try {
+          // Get a new instance of stripe
+          const stripe = await stripePromise;
+          if (!stripe || !mounted) {
+            return;
+          }
+
+          setStripeInstance(stripe);
+
+          // Create elements instance
+          const elements = stripe.elements({
+            clientSecret,
+            appearance: { theme: "stripe" /* ... */ },
+          });
+
+          // Create and mount the payment element
+          paymentElementInstance = elements.create("payment");
+          if (mounted) {
+            const paymentContainer = document.getElementById("payment-element");
+            if (paymentContainer) {
+              paymentElementInstance.mount("#payment-element");
+              setStripeElement(elements);
+            }
+          }
+        } catch (error) {
+          if (mounted) {
+            setError("Failed to initialize payment system: " + error.message);
+          }
         }
-        const elements = stripe.elements({
-          clientSecret,
-          appearance: { theme: "stripe" /* ... */ },
-        });
-        const paymentElement = elements.create("payment");
-        paymentElement.mount("#payment-element");
-
-        const form = document.getElementById("payment-form");
-        if (!form) return;
-
-        // Debounce or ensure single event listener
-        const submitHandler = async (event) => {
-          event.preventDefault();
-          if (isLoading) return;
-          setIsLoading(true);
-          setError(null);
-
-          const signupMethod = localStorage.getItem("signup_method");
-          let emailForReceipt = "";
-          if (signupMethod === "email") {
-            emailForReceipt = localStorage.getItem("temp_email");
-          } else if (signupMethod === "google") {
-            emailForReceipt = localStorage.getItem("google_temp_email");
-          }
-
-          const { error: stripeError, paymentIntent } =
-            await stripe.confirmPayment({
-              elements,
-              confirmParams: {
-                return_url: `${window.location.origin}/payment-confirmation`, // For redirect scenario
-                receipt_email: emailForReceipt,
-              },
-              redirect: "if_required", // Important for handling SCA
-            });
-
-          if (stripeError) {
-            setError(stripeError.message || "Payment failed.");
-            setIsLoading(false);
-          } else if (paymentIntent && paymentIntent.status === "succeeded") {
-            // Payment succeeded without redirect
-            await completeRegistrationAfterPayment(paymentIntent.id);
-          } else if (
-            paymentIntent &&
-            paymentIntent.status === "requires_action"
-          ) {
-            // Additional action needed, Stripe handles redirect if configured.
-            // If not redirected, it means client-side action is needed (rare for simple card payments)
-            setError(
-              "Further action required to complete payment. Please follow the prompts."
-            );
-            setIsLoading(false);
-          } else if (!paymentIntent) {
-            // This means redirect happened or is about to happen.
-            // No further client action here, PaymentConfirmation.js will handle it.
-            // setIsLoading(false); // No need to set loading false if redirecting
-          }
-        };
-
-        // Clean up previous listener if any, or use a more robust way
-        const newForm = form.cloneNode(true);
-        form.parentNode.replaceChild(newForm, form);
-        newForm.addEventListener("submit", submitHandler);
       };
+
       initializePayment();
     }
-  }, [clientSecret, step, isLoading, completeRegistrationAfterPayment, tempUserId]); // Added isLoading and completeRegistrationAfterPayment
 
-  // ... JSX for steps 1 and 2 ...
-  // Step 1 form: onSubmit={handleNextStep}
-  // GoogleLogin: onSuccess={handleGoogleSignupSuccess} onError={handleGoogleSignupError}
-  // Step 2 (Payment form): id="payment-form"
-  // Back button in step 2 should clear tempUserId state if implemented, and localStorage items if going far back.
-  // For simplicity, the back button just sets step to 1.
-  // Consider clearing localStorage on back button from payment step if user might change signup method.
-  // Example for back button:
-  // onClick={() => {
-  //   setError(null);
-  //   setClientSecret(""); // Clear client secret
-  //   setTempUserId(null); // Clear temp user ID
-  //   // Optionally clear specific localStorage items if needed
-  //   // localStorage.removeItem("signup_method");
-  //   // localStorage.removeItem("temp_email"); // etc.
-  //   setStep(1);
-  // }}
+    // Cleanup function
+    return () => {
+      mounted = false;
+      // Unmount the payment element if it exists
+      if (paymentElementInstance) {
+        try {
+          paymentElementInstance.unmount();
+        } catch (err) {
+          console.log("Error unmounting Stripe element:", err);
+        }
+      }
+    };
+  }, [clientSecret, step]); // Remove isLoading and completeRegistrationAfterPayment from dependencies
+
+  // Reset page when going back to step 1
+  const handleBackToAccountDetails = () => {
+    setError(null);
+    setClientSecret("");
+    setTempUserId(null);
+    // Clear all signup-related localStorage items
+    localStorage.removeItem("signup_method");
+    localStorage.removeItem("temp_email");
+    localStorage.removeItem("temp_username");
+    localStorage.removeItem("temp_password");
+    localStorage.removeItem("google_temp_user_id");
+    localStorage.removeItem("google_temp_email");
+    localStorage.removeItem("google_temp_username");
+    setStep(1);
+  };
 
   return (
     <div className="auth-container">
@@ -344,7 +365,7 @@ function Signup() {
               disabled={isLoading}
             />
             <button type="submit" className="next-button" disabled={isLoading}>
-              {isLoading && !clientSecret ? ( // Show loading for account initiation
+              {isLoading && !clientSecret ? (
                 <>
                   <Loader size={18} className="spinner" />
                   <span>Processing...</span>
@@ -394,14 +415,12 @@ function Signup() {
             <p>You'll get lifetime access to all Byte-Notes features</p>
           </div>
 
-          <form id="payment-form">
-            {" "}
-            {/* Ensure this ID matches element mounting */}
+          <form id="payment-form" onSubmit={handlePaymentSubmit}>
             <div id="payment-element"></div>
             <button
               id="submit-button"
               type="submit"
-              disabled={isLoading || !clientSecret}
+              disabled={isLoading || !clientSecret || !stripeElement}
             >
               {isLoading ? (
                 <>
@@ -417,20 +436,7 @@ function Signup() {
 
           <button
             className="back-button"
-            onClick={() => {
-              setError(null);
-              setClientSecret(""); // Clear client secret
-              setTempUserId(null); // Clear temp user ID
-              // Consider clearing localStorage items related to the pending signup
-              localStorage.removeItem("signup_method");
-              localStorage.removeItem("temp_email");
-              localStorage.removeItem("temp_username");
-              localStorage.removeItem("temp_password");
-              localStorage.removeItem("google_temp_user_id");
-              localStorage.removeItem("google_temp_email");
-              localStorage.removeItem("google_temp_username");
-              setStep(1);
-            }}
+            onClick={handleBackToAccountDetails}
             disabled={isLoading}
           >
             Back to Account Details

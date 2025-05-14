@@ -33,6 +33,7 @@ app.use((req, res, next) => {
   const allowedOrigins = [
     "http://localhost:3000",
     "https://new-bytes-notes-app.onrender.com",
+    "https://bytenotesapp.netlify.app",
   ];
 
   const origin = req.headers.origin;
