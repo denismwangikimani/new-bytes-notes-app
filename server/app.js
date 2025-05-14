@@ -68,191 +68,323 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const googleAuthClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
-// Step 1: Initiate registration without creating a token
-app.post("/register/initiate", async (req, res) => {
-  const { email, username, password } = req.body;
+// NEW: Step 1 (Email): Initiate Email Signup
+app.post("/initiate-email-signup", async (req, res) => {
+  const { email, username, password: tempPassword } = req.body; // Client sends password, but we don't save it yet
 
-  // Validate request data
-  if (!email || !username || !password) {
-    return res.status(400).json({ message: "All fields are required!" });
+  if (!email || !username || !tempPassword) {
+    return res.status(400).json({ message: "Email, username, and password are required." });
+  }
+  if (tempPassword.length < 6) {
+    return res.status(400).json({ message: "Password must be at least 6 characters long." });
   }
 
   try {
-    // Check if user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: "User already exists!" });
+    let user = await User.findOne({ email });
+    if (user && user.isPaid) {
+      return res.status(400).json({ message: "Email already registered and paid." });
+    }
+    // If user exists but is not paid, we can allow them to retry payment with new details,
+    // or overwrite. For simplicity, let's assume a new attempt might mean new temp user or update existing.
+    // For now, let's prevent duplicate unpaid accounts with the same email.
+    if (user && !user.isPaid) {
+        // Optionally, delete the old unpaid user or update them.
+        // For this example, we'll just use the existing unpaid user.
+        // Or, to ensure clean state for this flow:
+        // await User.deleteOne({ email, isPaid: false }); 
+        // For now, let's prevent creating a new one if an unpaid one exists.
+         return res.status(400).json({ message: "An unpaid account with this email already exists. Try logging in or contacting support." });
+    }
+    
+    const existingUsername = await User.findOne({ username });
+    if (existingUsername && existingUsername.isPaid) {
+        return res.status(400).json({ message: "Username already taken." });
+    }
+    if (existingUsername && !existingUsername.isPaid) {
+        // Similar to email, handle existing unpaid username
+        return res.status(400).json({ message: "An unpaid account with this username already exists." });
     }
 
-    // Create a temporary user ID that we'll use for payment
-    // but don't save to the database yet
-    const tempUserId = new mongoose.Types.ObjectId();
-
-    return res.status(200).json({
-      message: "Account details valid",
-      userId: tempUserId,
-    });
-  } catch (error) {
-    console.error("Registration initiation error:", error);
-    return res.status(500).json({
-      message: "Error initiating registration",
-      error: error.toString(),
-    });
-  }
-});
-
-// Step 2: Create a payment intent
-app.post("/create-payment-intent", async (req, res) => {
-  const { email, amount, userId } = req.body;
-
-  try {
-    // Create a new Stripe customer
-    const customer = await stripe.customers.create({
-      email: email,
-      metadata: {
-        userId: userId.toString(),
-      },
-    });
-
-    // Create a payment intent
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: amount, // amount in cents
-      currency: "usd",
-      customer: customer.id,
-      metadata: {
-        userId: userId.toString(),
-        email: email,
-      },
-      receipt_email: email,
-      description: "Byte-Notes Lifetime Access",
-    });
-
-    res.status(200).send({
-      clientSecret: paymentIntent.client_secret,
-      customerId: customer.id,
-    });
-  } catch (error) {
-    console.error("Error creating payment intent:", error);
-    res
-      .status(500)
-      .json({ message: "Error processing payment", error: error.message });
-  }
-});
-
-// Step 3: Complete registration after payment
-app.post("/register/complete", async (req, res) => {
-  const { email, paymentIntentId, username, password } = req.body;
-
-  // First log all incoming data (except password)
-  console.log("Register complete request:", {
-    email,
-    paymentIntentId,
-    hasUsername: !!username,
-    hasPassword: !!password,
-  });
-
-  try {
-    // Verify the payment intent was successful
-    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-    console.log("Payment intent status:", paymentIntent.status);
-    console.log("Payment intent metadata:", paymentIntent.metadata);
-
-    if (paymentIntent.status !== "succeeded") {
-      return res.status(400).json({ message: "Payment not completed" });
-    }
-
-    // Get the user details from metadata
-    const userId = paymentIntent.metadata.userId;
-
-    if (!userId) {
-      return res
-        .status(400)
-        .json({ message: "User ID not found in payment metadata" });
-    }
-
-    // Ensure required fields are present
-    if (!username || !password) {
-      return res
-        .status(400)
-        .json({ message: "Username and password are required" });
-    }
-
-    // Create a user
-    const user = new User({
-      _id: userId,
+    // Create a preliminary user record (password is not hashed or stored yet)
+    // The client will hold the password and send it again at the /complete-payment step
+    const preliminaryUser = new User({
       email,
       username,
-      password: await bcrypt.hash(password, 10),
-      isPaid: true,
-      paymentDate: new Date(),
-      stripeCustomerId: paymentIntent.customer,
+      isPaid: false,
+      // password will be set upon successful payment completion
     });
+    await preliminaryUser.save();
+
+    res.status(200).json({
+      message: "Signup initiated. Proceed to payment.",
+      tempUserId: preliminaryUser._id.toString(),
+    });
+  } catch (error) {
+    console.error("Error initiating email signup:", error);
+    res.status(500).json({ message: "Error initiating signup", error: error.toString() });
+  }
+});
+
+
+// MODIFIED: /auth/google to become /google/initiate-signup
+app.post("/google/initiate-signup", async (req, res) => {
+  const { tokenId } = req.body;
+  try {
+    const ticket = await googleAuthClient.verifyIdToken({
+      idToken: tokenId,
+      audience: GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, email_verified, given_name } = payload;
+
+    if (!email_verified) {
+      return res.status(400).json({ message: "Google email not verified." });
+    }
+
+    let user = await User.findOne({ googleId });
+
+    if (user && user.isPaid) {
+      // User exists with Google ID and is paid, log them in
+      const token = jwt.sign(
+        { email: user.email, userId: user._id.toString(), isPaid: user.isPaid },
+        process.env.JWT_SECRET || "secret",
+        { expiresIn: "24h" }
+      );
+      return res.status(200).json({ message: "Google login successful!", token });
+    }
+
+    if (!user) { // No user with this googleId, check by email
+      user = await User.findOne({ email });
+      if (user) { // User exists with this email
+        if (user.isPaid) {
+          // Email is registered and paid, but not linked to this Google ID.
+          // This could be a conflict. For now, error.
+          return res.status(400).json({ message: "This email is already registered. Please log in with your password or existing Google account." });
+        } else {
+          // User exists with this email but is unpaid. Link Google ID.
+          user.googleId = googleId;
+          if (!user.username && (name || given_name)) {
+            user.username = name || given_name;
+          }
+          // Ensure username uniqueness if updated
+          if (user.isModified("username") || user.isModified("googleId")) {
+             const existingUsernameCheck = await User.findOne({ username: user.username, _id: { $ne: user._id } });
+             if (existingUsernameCheck) user.username = `${user.username}_${Date.now().toString().slice(-4)}`;
+             await user.save();
+          }
+        }
+      } else {
+        // New user via Google
+        let newUsername = name || given_name || email.split("@")[0];
+        const existingUsernameCheck = await User.findOne({ username: newUsername });
+        if (existingUsernameCheck) {
+          newUsername = `${newUsername}_${Date.now().toString().slice(-4)}`;
+        }
+        user = new User({
+          googleId,
+          email,
+          username: newUsername,
+          isPaid: false,
+        });
+        await user.save();
+      }
+    }
+    // At this point, 'user' is either a new user, an existing unpaid user now linked with Google,
+    // or an existing unpaid Google user. All need to pay.
+    res.status(200).json({
+      message: "Google authentication successful, payment required.",
+      tempUserId: user._id.toString(),
+      email: user.email,
+      username: user.username,
+      isPaid: false,
+    });
+
+  } catch (error) {
+    console.error("Google initiate signup error:", error);
+    res.status(500).json({ message: "Google authentication failed.", error: error.toString() });
+  }
+});
+
+
+// NEW: Step 2 (All signups): Create Payment Session (replaces /create-payment-intent)
+app.post("/create-payment-session", async (req, res) => {
+  const { tempUserId, email } = req.body; // email is for Stripe customer
+
+  if (!tempUserId || !email) {
+    return res.status(400).json({ message: "Temporary User ID and email are required." });
+  }
+
+  try {
+    const user = await User.findById(tempUserId);
+    if (!user || user.isPaid) {
+      return res.status(404).json({ message: "Valid unpaid user not found or already paid." });
+    }
+
+    let stripeCustomerId = user.stripeCustomerId;
+    if (!stripeCustomerId) {
+      const customer = await stripe.customers.create({
+        email: email,
+        metadata: {
+          userId: tempUserId, // Link Stripe customer to our temp user ID
+        },
+      });
+      stripeCustomerId = customer.id;
+      user.stripeCustomerId = stripeCustomerId; // Save it for later
+      await user.save();
+    }
+
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: 1800, // $18.00 in cents
+      currency: "usd",
+      customer: stripeCustomerId,
+      receipt_email: email,
+      description: "Byte-Notes Lifetime Access - One Time Payment",
+      metadata: {
+        userId: tempUserId, // IMPORTANT: Link PaymentIntent to our temp user ID
+      },
+    });
+
+    res.status(200).json({
+      clientSecret: paymentIntent.client_secret,
+    });
+  } catch (error) {
+    console.error("Error creating payment session:", error);
+    res.status(500).json({ message: "Error processing payment", error: error.message });
+  }
+});
+
+// NEW: Step 3 (All signups): Complete Payment and Finalize Registration
+// (replaces /register/complete and /auth/google/complete-payment)
+app.post("/complete-payment", async (req, res) => {
+  const { paymentIntentId, signupMethod, email, username, password, tempUserId: tempUserIdFromGoogleFlow } = req.body;
+
+  if (!paymentIntentId || !signupMethod) {
+    return res.status(400).json({ message: "Payment Intent ID and signup method are required." });
+  }
+  if (signupMethod === 'email' && (!email || !username || !password)) {
+    return res.status(400).json({ message: "Email, username, and password are required for email signup completion." });
+  }
+  if (signupMethod === 'google' && !tempUserIdFromGoogleFlow) {
+     return res.status(400).json({ message: "Temporary User ID is required for Google signup completion." });
+  }
+
+
+  try {
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (paymentIntent.status !== "succeeded") {
+      return res.status(400).json({ message: "Payment not successful." });
+    }
+    if (paymentIntent.amount !== 1800) {
+        return res.status(400).json({ message: "Payment amount incorrect." });
+    }
+
+    const userIdFromPaymentMeta = paymentIntent.metadata.userId;
+    if (!userIdFromPaymentMeta) {
+        return res.status(400).json({ message: "User ID missing from payment metadata." });
+    }
+    
+    // For Google flow, ensure the tempUserId from client matches payment metadata
+    if (signupMethod === 'google' && tempUserIdFromGoogleFlow !== userIdFromPaymentMeta) {
+        console.error("Mismatch in tempUserId for Google flow:", tempUserIdFromGoogleFlow, userIdFromPaymentMeta);
+        return res.status(400).json({ message: "User ID mismatch during Google payment completion." });
+    }
+
+    const user = await User.findById(userIdFromPaymentMeta);
+    if (!user) {
+      return res.status(404).json({ message: "User not found for payment completion." });
+    }
+    if (user.isPaid) {
+      // Should ideally not happen if logic is correct, but good to check.
+      // If already paid, just generate token.
+       const token = jwt.sign(
+        { userId: user._id.toString(), email: user.email, isPaid: user.isPaid },
+        process.env.JWT_SECRET || "secret",
+        { expiresIn: "24h" }
+      );
+      return res.status(200).json({ message: "Account already active.", token });
+    }
+
+    // Finalize user based on signup method
+    if (signupMethod === 'email') {
+      // Ensure the email and username from client match the preliminary user record
+      if (user.email !== email || user.username !== username) {
+          console.error("Data mismatch for email user:", {dbEmail: user.email, clientEmail: email}, {dbUser: user.username, clientUser: username} );
+          return res.status(400).json({ message: "User data mismatch during email payment completion." });
+      }
+      user.password = await bcrypt.hash(password, 10);
+    }
+    // For Google signup, email, username, googleId are already set.
+
+    user.isPaid = true;
+    user.paymentDate = new Date();
+    user.stripeCustomerId = paymentIntent.customer; // Ensure Stripe Customer ID is stored/updated.
+    // user.status = 'active'; // If you use a status field
 
     await user.save();
 
-    // Create and send token
     const token = jwt.sign(
-      {
-        userId: user._id.toString(),
-        userEmail: user.email,
-        isPaid: user.isPaid,
-      },
+      { userId: user._id.toString(), email: user.email, isPaid: user.isPaid },
       process.env.JWT_SECRET || "secret",
       { expiresIn: "24h" }
     );
 
     res.status(200).json({
-      message: "Registration successful!",
+      message: "Payment successful and registration complete!",
       token,
     });
   } catch (error) {
-    console.error("Error completing registration:", error);
-    res.status(500).json({
-      message: "Error completing registration",
-      error: error.toString(),
-      stack: error.stack,
-    });
+    console.error("Error completing payment:", error);
+    res.status(500).json({ message: "Error completing payment", error: error.toString() });
   }
 });
 
-// Login endpoint
+
+// Login endpoint (remains largely the same, but ensure it checks isPaid)
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
-  // Validate request data
   if (!email || !password) {
-    return res
-      .status(400)
-      .json({ message: "Email and Password are required!" });
+    return res.status(400).json({ message: "Email and Password are required!" });
   }
 
   try {
-    // Check if the user exists and return an error message if the user does not exist
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(404).json({ message: "User not found!" });
     }
 
-    // Compare the password provided with the hashed password in the database
-    const isPasswordMatching = await bcrypt.compare(password, user.password);
+    // For users who might have initiated signup but not paid (e.g. email signup)
+    // they won't have a password set yet.
+    if (!user.password && !user.googleId) { // No password and not a Google user
+        return res.status(401).json({ message: "Account setup incomplete. Please complete payment or signup again." });
+    }
+    // If it's a Google user trying to log in with email/password, and they never set one
+    if (user.googleId && !user.password) {
+        return res.status(401).json({ message: "Please log in using your Google account." });
+    }
 
-    // Return an error message if the password is incorrect
+
+    const isPasswordMatching = await bcrypt.compare(password, user.password);
     if (!isPasswordMatching) {
       return res.status(401).json({ message: "Invalid credentials!" });
     }
 
-    // Create a JWT token if the password is correct
+    if (!user.isPaid) {
+        // This case should ideally be handled by the signup flow redirecting to payment.
+        // But if they try to log in directly:
+        return res.status(403).json({ message: "Account not activated. Payment required.", paymentRequired: true, tempUserId: user._id.toString(), email: user.email });
+    }
+
     const token = jwt.sign(
       { email: user.email, userId: user._id.toString(), isPaid: user.isPaid },
       process.env.JWT_SECRET || "secret",
-      {
-        expiresIn: "24h",
-      }
+      { expiresIn: "24h" }
     );
-
-    // Respond with the token if the user is logged in successfully
     res.status(200).json({ message: "Login successful!", token: token });
   } catch (error) {
+    console.error("Login error:", error);
     res.status(500).json({ message: "Error logging in user", error: error.toString() });
   }
 });
