@@ -69,6 +69,11 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const googleAuthClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
+// Health check endpoint
+app.get("/healthz", (req, res) => {
+  res.sendStatus(200); // Simply send 200 OK if the server is running
+});
+
 // NEW: Step 1 (Email): Initiate Email Signup
 app.post("/initiate-email-signup", async (req, res) => {
   const { email, username, password: tempPassword } = req.body; // Client sends password, but we don't save it yet
