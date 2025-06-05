@@ -23,6 +23,7 @@ import {
   Video,
   FileText,
   BookText,
+  Pencil,
 } from "lucide-react";
 import "./EditorToolbar.css";
 import MediaDialog from "./MediaDialog";
@@ -32,6 +33,7 @@ const EditorToolbar = ({
   editor,
   savedStatus,
   onInsertMedia,
+  onSwitchMode,
 }) => {
   const [showAllTools, setShowAllTools] = useState(false);
   const [showFontFamilyMenu, setShowFontFamilyMenu] = useState(false);
@@ -177,6 +179,14 @@ const EditorToolbar = ({
   const primaryTools = (
     <>
       {/* Bold, Italic, Underline buttons */}
+      <button
+        className="toolbar-button"
+        onClick={onSwitchMode}
+        title="Switch to Canvas Mode"
+      >
+        <Pencil size={18} />
+      </button>
+      <div className="toolbar-divider"></div>
       <button
         className="toolbar-button"
         onClick={() => handleFormat("bold")}

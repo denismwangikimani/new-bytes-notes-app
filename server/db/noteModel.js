@@ -18,6 +18,10 @@ const noteSchema = new mongoose.Schema(
       required: false,
       text: true,
     },
+    canvasData: {
+      type: String,
+      required: false,
+    },
     createdAt: {
       type: Date,
       default: Date.now,

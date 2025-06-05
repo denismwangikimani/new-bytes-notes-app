@@ -27,6 +27,7 @@ import EditorToolbar from "../EditorToolbar";
 import { generateContent, transformText } from "../../services/geminiService";
 import FlashcardModal from "../FlashcardModal";
 import FileSidebar from "./FileSidebar";
+import CanvasEditor from "../canvas/CanvasEditor";
 import "./notes.css";
 
 // Slate imports
@@ -579,6 +580,10 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     type: null,
   });
 
+  // editor mode state
+  const [editorMode, setEditorMode] = useState("rich"); // "rich" or "canvas"
+  const [canvasData, setCanvasData] = useState(""); // For storing canvas drawing data
+
   //file states
   const [isFileSidebarOpen, setIsFileSidebarOpen] = useState(false);
   const [currentFileUrl, setCurrentFileUrl] = useState(null);
@@ -622,6 +627,14 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     if (isAutoSaving.current) {
       return;
     }
+
+    // Extract canvas data if it exists
+    if (note?.canvasData) {
+      setCanvasData(note.canvasData);
+    } else {
+      setCanvasData("");
+    }
+
     const newSlateValue = deserialize(note?.content);
     setSlateValue(
       Array.isArray(newSlateValue) && newSlateValue.length > 0
@@ -629,7 +642,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         : [{ type: "paragraph", children: [{ text: "" }] }]
     );
     setTitle(note?.title || "");
-  }, [note?._id, note?.content, note?.title]); // This effect syncs editor with external note changes
+  }, [note?._id, note?.content, note?.title, note?.canvasData]); // Added note?.canvasData dependency // This effect syncs editor with external note changes
 
   const { isSidebarOpen } = useSidebar();
   const updateTimeoutRef = useRef(null);
@@ -980,6 +993,30 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       setCurrentFileName,
       setIsFileSidebarOpen,
     ] // Added dependencies
+  );
+
+  // Render leaf nodes with styles
+  const handleSwitchMode = useCallback(() => {
+    setEditorMode((prev) => (prev === "rich" ? "canvas" : "rich"));
+  }, []);
+
+  // Handle canvas updates
+  const handleUpdateCanvas = useCallback(
+    (data) => {
+      setCanvasData(data);
+
+      // Save canvas data to note
+      if (note?._id) {
+        // For now, we'll store canvas data in a special format in the note content
+        // Later we might want to store it in a separate field in the database
+        //const canvasContent = `<div class="canvas-data">${data}</div>`;
+        onUpdate(note._id, {
+          canvasData: data,
+          // Don't update the main content when saving canvas data
+        });
+      }
+    },
+    [note, onUpdate]
   );
 
   const renderLeaf = useCallback(({ attributes, children, leaf }) => {
@@ -1381,34 +1418,48 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     <div className={`editor-container ${!isSidebarOpen ? "full-width" : ""}`}>
       <EditorHeader onCreate={onCreate} />
       <div className="editor-content-wrapper">
-        <EditorToolbar editor={editor} onFormatText={handleFormatText} />
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="editor-title"
-          placeholder="Note title..."
-        />
-        <Slate
-          editor={editor}
-          initialValue={initialValue} // Use initialValue for initial setup
-          value={slateValue} // Controlled component with slateValue
-          onChange={handleSlateChange}
-          // FIX 1: Correct the key to prevent re-initialization on every render
-          key={note?._id || "new-note"}
-        >
-          <Editable
-            className="editor-content rich-editor"
-            renderElement={renderElement}
-            renderLeaf={renderLeaf}
-            placeholder="Start typing your note..."
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            data-gramm="false" // Consider data-gramm_editor="false" if Grammarly is an issue
-            onKeyDown={handleKeyDown}
+        {editorMode === "rich" ? (
+          <>
+            <EditorToolbar
+              editor={editor}
+              onFormatText={handleFormatText}
+              onSwitchMode={handleSwitchMode}
+            />
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="editor-title"
+              placeholder="Note title..."
+            />
+            <Slate
+              editor={editor}
+              initialValue={initialValue}
+              value={slateValue}
+              onChange={handleSlateChange}
+              key={note?._id || "new-note"}
+            >
+              <Editable
+                className="editor-content rich-editor"
+                renderElement={renderElement}
+                renderLeaf={renderLeaf}
+                placeholder="Start typing your note..."
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                data-gramm="false"
+                onKeyDown={handleKeyDown}
+              />
+            </Slate>
+          </>
+        ) : (
+          <CanvasEditor
+            onSwitchMode={handleSwitchMode}
+            noteId={note?._id}
+            onUpdateCanvas={handleUpdateCanvas}
+            initialData={canvasData}
           />
-        </Slate>
+        )}
       </div>
       <AIAssistant
         onActivateText={handleActivateText}

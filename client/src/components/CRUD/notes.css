@@ -963,3 +963,22 @@ button:disabled {
     max-width: calc(100vw - 3rem);
   }
 }
+
+/* Canvas Mode Styles */
+.canvas-mode .editor-content-wrapper {
+  padding: 0;
+}
+
+.canvas-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Make sure the canvas takes up the full space */
+.canvas-container canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}

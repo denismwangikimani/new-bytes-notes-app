@@ -79,36 +79,47 @@ app.post("/initiate-email-signup", async (req, res) => {
   const { email, username, password: tempPassword } = req.body; // Client sends password, but we don't save it yet
 
   if (!email || !username || !tempPassword) {
-    return res.status(400).json({ message: "Email, username, and password are required." });
+    return res
+      .status(400)
+      .json({ message: "Email, username, and password are required." });
   }
   if (tempPassword.length < 6) {
-    return res.status(400).json({ message: "Password must be at least 6 characters long." });
+    return res
+      .status(400)
+      .json({ message: "Password must be at least 6 characters long." });
   }
 
   try {
     let user = await User.findOne({ email });
     if (user && user.isPaid) {
-      return res.status(400).json({ message: "Email already registered and paid." });
+      return res
+        .status(400)
+        .json({ message: "Email already registered and paid." });
     }
     // If user exists but is not paid, we can allow them to retry payment with new details,
     // or overwrite. For simplicity, let's assume a new attempt might mean new temp user or update existing.
     // For now, let's prevent duplicate unpaid accounts with the same email.
     if (user && !user.isPaid) {
-        // Optionally, delete the old unpaid user or update them.
-        // For this example, we'll just use the existing unpaid user.
-        // Or, to ensure clean state for this flow:
-        // await User.deleteOne({ email, isPaid: false }); 
-        // For now, let's prevent creating a new one if an unpaid one exists.
-         return res.status(400).json({ message: "An unpaid account with this email already exists. Try logging in or contacting support." });
+      // Optionally, delete the old unpaid user or update them.
+      // For this example, we'll just use the existing unpaid user.
+      // Or, to ensure clean state for this flow:
+      // await User.deleteOne({ email, isPaid: false });
+      // For now, let's prevent creating a new one if an unpaid one exists.
+      return res.status(400).json({
+        message:
+          "An unpaid account with this email already exists. Try logging in or contacting support.",
+      });
     }
-    
+
     const existingUsername = await User.findOne({ username });
     if (existingUsername && existingUsername.isPaid) {
-        return res.status(400).json({ message: "Username already taken." });
+      return res.status(400).json({ message: "Username already taken." });
     }
     if (existingUsername && !existingUsername.isPaid) {
-        // Similar to email, handle existing unpaid username
-        return res.status(400).json({ message: "An unpaid account with this username already exists." });
+      // Similar to email, handle existing unpaid username
+      return res.status(400).json({
+        message: "An unpaid account with this username already exists.",
+      });
     }
 
     // Create a preliminary user record (password is not hashed or stored yet)
@@ -127,10 +138,11 @@ app.post("/initiate-email-signup", async (req, res) => {
     });
   } catch (error) {
     console.error("Error initiating email signup:", error);
-    res.status(500).json({ message: "Error initiating signup", error: error.toString() });
+    res
+      .status(500)
+      .json({ message: "Error initiating signup", error: error.toString() });
   }
 });
-
 
 // MODIFIED: /auth/google to become /google/initiate-signup
 app.post("/google/initiate-signup", async (req, res) => {
@@ -156,16 +168,23 @@ app.post("/google/initiate-signup", async (req, res) => {
         process.env.JWT_SECRET || "secret",
         { expiresIn: "24h" }
       );
-      return res.status(200).json({ message: "Google login successful!", token });
+      return res
+        .status(200)
+        .json({ message: "Google login successful!", token });
     }
 
-    if (!user) { // No user with this googleId, check by email
+    if (!user) {
+      // No user with this googleId, check by email
       user = await User.findOne({ email });
-      if (user) { // User exists with this email
+      if (user) {
+        // User exists with this email
         if (user.isPaid) {
           // Email is registered and paid, but not linked to this Google ID.
           // This could be a conflict. For now, error.
-          return res.status(400).json({ message: "This email is already registered. Please log in with your password or existing Google account." });
+          return res.status(400).json({
+            message:
+              "This email is already registered. Please log in with your password or existing Google account.",
+          });
         } else {
           // User exists with this email but is unpaid. Link Google ID.
           user.googleId = googleId;
@@ -174,15 +193,23 @@ app.post("/google/initiate-signup", async (req, res) => {
           }
           // Ensure username uniqueness if updated
           if (user.isModified("username") || user.isModified("googleId")) {
-             const existingUsernameCheck = await User.findOne({ username: user.username, _id: { $ne: user._id } });
-             if (existingUsernameCheck) user.username = `${user.username}_${Date.now().toString().slice(-4)}`;
-             await user.save();
+            const existingUsernameCheck = await User.findOne({
+              username: user.username,
+              _id: { $ne: user._id },
+            });
+            if (existingUsernameCheck)
+              user.username = `${user.username}_${Date.now()
+                .toString()
+                .slice(-4)}`;
+            await user.save();
           }
         }
       } else {
         // New user via Google
         let newUsername = name || given_name || email.split("@")[0];
-        const existingUsernameCheck = await User.findOne({ username: newUsername });
+        const existingUsernameCheck = await User.findOne({
+          username: newUsername,
+        });
         if (existingUsernameCheck) {
           newUsername = `${newUsername}_${Date.now().toString().slice(-4)}`;
         }
@@ -204,26 +231,31 @@ app.post("/google/initiate-signup", async (req, res) => {
       username: user.username,
       isPaid: false,
     });
-
   } catch (error) {
     console.error("Google initiate signup error:", error);
-    res.status(500).json({ message: "Google authentication failed.", error: error.toString() });
+    res.status(500).json({
+      message: "Google authentication failed.",
+      error: error.toString(),
+    });
   }
 });
-
 
 // NEW: Step 2 (All signups): Create Payment Session (replaces /create-payment-intent)
 app.post("/create-payment-session", async (req, res) => {
   const { tempUserId, email } = req.body; // email is for Stripe customer
 
   if (!tempUserId || !email) {
-    return res.status(400).json({ message: "Temporary User ID and email are required." });
+    return res
+      .status(400)
+      .json({ message: "Temporary User ID and email are required." });
   }
 
   try {
     const user = await User.findById(tempUserId);
     if (!user || user.isPaid) {
-      return res.status(404).json({ message: "Valid unpaid user not found or already paid." });
+      return res
+        .status(404)
+        .json({ message: "Valid unpaid user not found or already paid." });
     }
 
     let stripeCustomerId = user.stripeCustomerId;
@@ -238,7 +270,6 @@ app.post("/create-payment-session", async (req, res) => {
       user.stripeCustomerId = stripeCustomerId; // Save it for later
       await user.save();
     }
-
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: 1800, // $18.00 in cents
@@ -256,25 +287,40 @@ app.post("/create-payment-session", async (req, res) => {
     });
   } catch (error) {
     console.error("Error creating payment session:", error);
-    res.status(500).json({ message: "Error processing payment", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Error processing payment", error: error.message });
   }
 });
 
 // NEW: Step 3 (All signups): Complete Payment and Finalize Registration
 // (replaces /register/complete and /auth/google/complete-payment)
 app.post("/complete-payment", async (req, res) => {
-  const { paymentIntentId, signupMethod, email, username, password, tempUserId: tempUserIdFromGoogleFlow } = req.body;
+  const {
+    paymentIntentId,
+    signupMethod,
+    email,
+    username,
+    password,
+    tempUserId: tempUserIdFromGoogleFlow,
+  } = req.body;
 
   if (!paymentIntentId || !signupMethod) {
-    return res.status(400).json({ message: "Payment Intent ID and signup method are required." });
+    return res
+      .status(400)
+      .json({ message: "Payment Intent ID and signup method are required." });
   }
-  if (signupMethod === 'email' && (!email || !username || !password)) {
-    return res.status(400).json({ message: "Email, username, and password are required for email signup completion." });
+  if (signupMethod === "email" && (!email || !username || !password)) {
+    return res.status(400).json({
+      message:
+        "Email, username, and password are required for email signup completion.",
+    });
   }
-  if (signupMethod === 'google' && !tempUserIdFromGoogleFlow) {
-     return res.status(400).json({ message: "Temporary User ID is required for Google signup completion." });
+  if (signupMethod === "google" && !tempUserIdFromGoogleFlow) {
+    return res.status(400).json({
+      message: "Temporary User ID is required for Google signup completion.",
+    });
   }
-
 
   try {
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
@@ -283,41 +329,62 @@ app.post("/complete-payment", async (req, res) => {
       return res.status(400).json({ message: "Payment not successful." });
     }
     if (paymentIntent.amount !== 1800) {
-        return res.status(400).json({ message: "Payment amount incorrect." });
+      return res.status(400).json({ message: "Payment amount incorrect." });
     }
 
     const userIdFromPaymentMeta = paymentIntent.metadata.userId;
     if (!userIdFromPaymentMeta) {
-        return res.status(400).json({ message: "User ID missing from payment metadata." });
+      return res
+        .status(400)
+        .json({ message: "User ID missing from payment metadata." });
     }
-    
+
     // For Google flow, ensure the tempUserId from client matches payment metadata
-    if (signupMethod === 'google' && tempUserIdFromGoogleFlow !== userIdFromPaymentMeta) {
-        console.error("Mismatch in tempUserId for Google flow:", tempUserIdFromGoogleFlow, userIdFromPaymentMeta);
-        return res.status(400).json({ message: "User ID mismatch during Google payment completion." });
+    if (
+      signupMethod === "google" &&
+      tempUserIdFromGoogleFlow !== userIdFromPaymentMeta
+    ) {
+      console.error(
+        "Mismatch in tempUserId for Google flow:",
+        tempUserIdFromGoogleFlow,
+        userIdFromPaymentMeta
+      );
+      return res.status(400).json({
+        message: "User ID mismatch during Google payment completion.",
+      });
     }
 
     const user = await User.findById(userIdFromPaymentMeta);
     if (!user) {
-      return res.status(404).json({ message: "User not found for payment completion." });
+      return res
+        .status(404)
+        .json({ message: "User not found for payment completion." });
     }
     if (user.isPaid) {
       // Should ideally not happen if logic is correct, but good to check.
       // If already paid, just generate token.
-       const token = jwt.sign(
+      const token = jwt.sign(
         { userId: user._id.toString(), email: user.email, isPaid: user.isPaid },
         process.env.JWT_SECRET || "secret",
         { expiresIn: "24h" }
       );
-      return res.status(200).json({ message: "Account already active.", token });
+      return res
+        .status(200)
+        .json({ message: "Account already active.", token });
     }
 
     // Finalize user based on signup method
-    if (signupMethod === 'email') {
+    if (signupMethod === "email") {
       // Ensure the email and username from client match the preliminary user record
       if (user.email !== email || user.username !== username) {
-          console.error("Data mismatch for email user:", {dbEmail: user.email, clientEmail: email}, {dbUser: user.username, clientUser: username} );
-          return res.status(400).json({ message: "User data mismatch during email payment completion." });
+        console.error(
+          "Data mismatch for email user:",
+          { dbEmail: user.email, clientEmail: email },
+          { dbUser: user.username, clientUser: username }
+        );
+        return res.status(400).json({
+          message: "User data mismatch during email payment completion.",
+        });
       }
       user.password = await bcrypt.hash(password, 10);
     }
@@ -342,17 +409,20 @@ app.post("/complete-payment", async (req, res) => {
     });
   } catch (error) {
     console.error("Error completing payment:", error);
-    res.status(500).json({ message: "Error completing payment", error: error.toString() });
+    res
+      .status(500)
+      .json({ message: "Error completing payment", error: error.toString() });
   }
 });
-
 
 // Login endpoint (remains largely the same, but ensure it checks isPaid)
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res.status(400).json({ message: "Email and Password are required!" });
+    return res
+      .status(400)
+      .json({ message: "Email and Password are required!" });
   }
 
   try {
@@ -363,14 +433,19 @@ app.post("/login", async (req, res) => {
 
     // For users who might have initiated signup but not paid (e.g. email signup)
     // they won't have a password set yet.
-    if (!user.password && !user.googleId) { // No password and not a Google user
-        return res.status(401).json({ message: "Account setup incomplete. Please complete payment or signup again." });
+    if (!user.password && !user.googleId) {
+      // No password and not a Google user
+      return res.status(401).json({
+        message:
+          "Account setup incomplete. Please complete payment or signup again.",
+      });
     }
     // If it's a Google user trying to log in with email/password, and they never set one
     if (user.googleId && !user.password) {
-        return res.status(401).json({ message: "Please log in using your Google account." });
+      return res
+        .status(401)
+        .json({ message: "Please log in using your Google account." });
     }
-
 
     const isPasswordMatching = await bcrypt.compare(password, user.password);
     if (!isPasswordMatching) {
@@ -378,9 +453,14 @@ app.post("/login", async (req, res) => {
     }
 
     if (!user.isPaid) {
-        // This case should ideally be handled by the signup flow redirecting to payment.
-        // But if they try to log in directly:
-        return res.status(403).json({ message: "Account not activated. Payment required.", paymentRequired: true, tempUserId: user._id.toString(), email: user.email });
+      // This case should ideally be handled by the signup flow redirecting to payment.
+      // But if they try to log in directly:
+      return res.status(403).json({
+        message: "Account not activated. Payment required.",
+        paymentRequired: true,
+        tempUserId: user._id.toString(),
+        email: user.email,
+      });
     }
 
     const token = jwt.sign(
@@ -391,7 +471,9 @@ app.post("/login", async (req, res) => {
     res.status(200).json({ message: "Login successful!", token: token });
   } catch (error) {
     console.error("Login error:", error);
-    res.status(500).json({ message: "Error logging in user", error: error.toString() });
+    res
+      .status(500)
+      .json({ message: "Error logging in user", error: error.toString() });
   }
 });
 
@@ -763,7 +845,7 @@ app.get("/notes", auth, async (req, res) => {
 
 //create a new note
 app.post("/notes", auth, async (req, res) => {
-  let { title, content } = req.body;
+  let { title, content, canvasData } = req.body; // Add canvasData parameter
 
   // If title or content is blank, assign a default value or return an error
   if (!title) title = "Untitled Note";
@@ -777,10 +859,11 @@ app.post("/notes", auth, async (req, res) => {
     if (!userId) {
       return res.status(401).json({ message: "User ID not found in token" });
     }
-    // Create a new note to save in the database, by passing the title, content and the user id
+    // Create a new note to save in the database
     const newNote = new Note({
       title,
       content,
+      canvasData, // Include canvasData field
       user: userId,
     });
     await newNote.save();
@@ -796,7 +879,7 @@ app.post("/notes", auth, async (req, res) => {
 
 //update a note by id
 app.put("/notes/:id", auth, async (req, res) => {
-  const { title, content } = req.body;
+  const { title, content, canvasData } = req.body; // Add canvasData parameter
 
   // Validate request data
   try {
@@ -805,7 +888,12 @@ app.put("/notes/:id", auth, async (req, res) => {
     // Find the note by id and update it
     const note = await Note.findOneAndUpdate(
       { _id: req.params.id, user: userId },
-      { title, content },
+      {
+        // Only update fields that are provided in the request
+        ...(title !== undefined && { title }),
+        ...(content !== undefined && { content }),
+        ...(canvasData !== undefined && { canvasData }),
+      },
       { new: true }
     );
     // Respond with success message if note is updated successfully
