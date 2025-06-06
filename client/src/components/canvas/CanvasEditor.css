@@ -110,7 +110,7 @@
   position: relative;
   overflow: hidden;
   width: 100%;
-  height: calc(100% - 60px); /* Account for toolbar height */
+  height: calc(100% - 60px);
 }
 
 canvas {
@@ -119,7 +119,11 @@ canvas {
   height: 100%;
   background-color: white;
   box-shadow: inset 0 0 0 1px #e5e7eb;
-  touch-action: none; /* Prevent browser handling of touch gestures */
+  touch-action: none;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .calculation-overlay {
@@ -145,6 +149,25 @@ canvas {
   border-top-color: #4f46e5;
   animation: spin 1s linear infinite;
   margin-bottom: 10px;
+}
+
+/* Add this class that will be applied when showing answers */
+.canvas-container.with-answers {
+  position: relative;
+}
+
+.answer-area {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  min-height: 40px;
+  background-color: rgba(249, 250, 251, 0.8);
+  border-top: 1px solid #e5e7eb;
+  padding: 8px 16px;
+  font-family: Arial, sans-serif;
+  color: #4f46e5;
+  font-size: 18px;
 }
 
 @keyframes spin {

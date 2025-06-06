@@ -31,6 +31,10 @@ const CanvasEditor = ({
   const [variables, setVariables] = useState({});
   const analyzeTimeoutRef = useRef(null);
 
+  // New state variables for clean canvas data
+  const [cleanCanvasData, setCleanCanvasData] = useState(""); // Store drawing without answers
+  const answerAreaHeight = 100; // Reserved space at bottom for answers
+
   const colors = [
     { name: "Black", value: "#000000" },
     { name: "Red", value: "#FF0000" },
@@ -47,36 +51,42 @@ const CanvasEditor = ({
   // Initialize canvas with improved sizing and scaling
   useEffect(() => {
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", {
+      alpha: false,
+      desynchronized: true, // Improves performance
+      willReadFrequently: false,
+    });
 
     // Reset any previous context settings
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     const resizeCanvas = () => {
       const container = canvas.parentElement;
-      const dpr = devicePixelRatioRef.current;
+      const dpr = window.devicePixelRatio || 1;
+      devicePixelRatioRef.current = dpr;
 
-      // Get the container's full size
+      // Store physical container dimensions
       const containerWidth = container.clientWidth;
       const containerHeight = container.clientHeight;
 
-      // Set canvas CSS size to 100% of container
-      canvas.style.width = "100%";
-      canvas.style.height = "100%";
+      // Set canvas CSS size (display size)
+      canvas.style.width = `${containerWidth}px`;
+      canvas.style.height = `${containerHeight}px`;
 
-      // Set canvas actual dimensions accounting for pixel ratio
-      canvas.width = containerWidth * dpr;
-      canvas.height = containerHeight * dpr;
+      // Set canvas internal dimensions (drawing buffer size)
+      canvas.width = Math.floor(containerWidth * dpr);
+      canvas.height = Math.floor(containerHeight * dpr);
 
-      // Reset the context transform and apply the scale once
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      // Scale all drawing operations by the dpr
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset current transform
       ctx.scale(dpr, dpr);
 
-      // Set up context for drawing
+      // Configure for high quality drawing
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
+      ctx.miterLimit = 2;
     };
 
     // Initial resize
@@ -95,6 +105,9 @@ const CanvasEditor = ({
         // Clear canvas before drawing
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0);
+
+        // Save as clean data too
+        setCleanCanvasData(initialData);
       };
       img.src = initialData;
     }
@@ -162,42 +175,80 @@ const CanvasEditor = ({
   // Draw the calculation results on the canvas
   const drawResults = useCallback(
     (results) => {
-      if (!context || !canvasRef.current || results.length === 0) return;
+      if (
+        !context ||
+        !canvasRef.current ||
+        results.length === 0 ||
+        !cleanCanvasData
+      )
+        return;
 
       const canvas = canvasRef.current;
 
-      // Save current context state
-      context.save();
+      // First, restore the clean drawing
+      const img = new Image();
+      img.onload = () => {
+        // Clear the canvas
+        context.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Set text style for results
-      context.font = "22px Arial";
-      context.fillStyle = "#4f46e5"; // Purple color for results
+        // Draw the original clean drawing
+        context.drawImage(img, 0, 0);
 
-      // Find a good position to place the result
-      // For now, we'll place it in the bottom right corner
-      // In a real app, you'd want to analyze the equation's position
-      let resultX = canvas.width / (devicePixelRatioRef.current * 2);
-      let resultY = canvas.height / devicePixelRatioRef.current - 50;
+        // Calculate a better position for results - near the equation
+        const padding = 20;
+        const resultX = padding;
+        const resultY =
+          canvas.height / devicePixelRatioRef.current - answerAreaHeight;
 
-      results.forEach((result) => {
-        if (result.expr && result.result !== undefined) {
-          const text = `${result.assign ? `${result.expr} = ` : ""}${
-            result.result
-          }`;
-          context.fillText(text, resultX, resultY);
-          resultY += 30; // Move down for multiple results
-        }
-      });
+        // Draw a subtle background for the answer area
+        context.save();
+        context.fillStyle = "rgba(245, 247, 250, 0.85)";
+        context.fillRect(0, resultY - padding, canvas.width, answerAreaHeight);
 
-      // Restore context state
-      context.restore();
+        // Draw a subtle separator line
+        context.strokeStyle = "#e5e7eb";
+        context.lineWidth = 1;
+        context.beginPath();
+        context.moveTo(0, resultY - padding);
+        context.lineTo(canvas.width, resultY - padding);
+        context.stroke();
 
-      // Save the canvas with the results
-      const canvasDataWithResults = canvas.toDataURL("image/jpeg", 0.7);
-      onUpdateCanvas(canvasDataWithResults);
+        // Set text style for results
+        context.font = "22px Arial";
+        context.fillStyle = "#4f46e5";
+
+        // Draw each result
+        let currentY = resultY + 10;
+        results.forEach((result) => {
+          if (result.expr && result.result !== undefined) {
+            const text = `${result.assign ? `${result.expr} = ` : ""}${
+              result.result
+            }`;
+            context.fillText(text, resultX, currentY);
+            currentY += 30;
+          }
+        });
+
+        context.restore();
+
+        // Save the combined canvas with results
+        const canvasDataWithResults = canvas.toDataURL("image/png", 1.0);
+        onUpdateCanvas(canvasDataWithResults);
+      };
+      img.src = cleanCanvasData;
     },
-    [context, onUpdateCanvas]
+    [context, onUpdateCanvas, cleanCanvasData]
   );
+
+  const saveCleanCanvasData = () => {
+    if (!canvasRef.current || !context) return "";
+
+    const canvas = canvasRef.current;
+    // Use PNG for better quality when storing clean version
+    const cleanData = canvas.toDataURL("image/png");
+    setCleanCanvasData(cleanData);
+    return cleanData;
+  };
 
   // Save canvas data when drawing stops - modified to include math detection
   useEffect(() => {
@@ -211,11 +262,11 @@ const CanvasEditor = ({
       saveTimeoutRef.current = setTimeout(() => {
         const canvas = canvasRef.current;
         if (canvas) {
-          const canvasData = canvas.toDataURL("image/jpeg", 0.7);
-          onUpdateCanvas(canvasData);
+          // Save the clean version without answers
+          const cleanData = saveCleanCanvasData();
 
-          // Check for equals sign or calculation after the user stops drawing
-          checkForEqualsSign(canvasData);
+          // Check for equations in the clean image
+          checkForEqualsSign(cleanData);
         }
       }, 600);
     }
@@ -225,7 +276,7 @@ const CanvasEditor = ({
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [isDrawing, context, onUpdateCanvas, checkForEqualsSign]);
+  }, [isDrawing, context]);
 
   // Existing drawing functions
   const startDrawing = (e) => {

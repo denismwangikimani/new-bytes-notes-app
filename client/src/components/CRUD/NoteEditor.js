@@ -1031,9 +1031,9 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
     try {
       // If data is already small enough, return as-is
-      if (data.length < 500000) return data;
+      if (data.length < 300000) return data;
 
-      // For larger images, compress more aggressively
+      // For larger images, compress more intelligently
       const canvas = document.createElement("canvas");
       const img = new Image();
 
@@ -1049,29 +1049,39 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       const compress = async () => {
         await loadImage();
 
-        // Determine if we need to resize for very large images
+        // Calculate dimensions while maintaining aspect ratio
         let targetWidth = img.width;
         let targetHeight = img.height;
 
-        // If image is very large, scale it down
-        const MAX_DIMENSION = 1500;
-        if (img.width > MAX_DIMENSION || img.height > MAX_DIMENSION) {
-          const scale = Math.min(
+        // If image is very large, scale it down proportionally
+        const MAX_DIMENSION = 2000;
+        const MAX_PIXELS = 2000 * 2000;
+
+        if (
+          img.width > MAX_DIMENSION ||
+          img.height > MAX_DIMENSION ||
+          img.width * img.height > MAX_PIXELS
+        ) {
+          const scaleFactor = Math.min(
             MAX_DIMENSION / img.width,
-            MAX_DIMENSION / img.height
+            MAX_DIMENSION / img.height,
+            Math.sqrt(MAX_PIXELS / (img.width * img.height))
           );
-          targetWidth = img.width * scale;
-          targetHeight = img.height * scale;
+          targetWidth = Math.floor(img.width * scaleFactor);
+          targetHeight = Math.floor(img.height * scaleFactor);
         }
 
         canvas.width = targetWidth;
         canvas.height = targetHeight;
 
         const ctx = canvas.getContext("2d");
+        // Configure for high quality resizing
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
         ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
-        // Convert to JPEG with appropriate quality
-        return canvas.toDataURL("image/jpeg", 0.5);
+        // Use PNG for line drawings to avoid JPEG artifacts
+        return canvas.toDataURL("image/png", 1.0);
       };
 
       return compress();
