@@ -4,6 +4,11 @@
   height: 100%;
   width: 100%;
   background-color: #f9f9f9;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 
 .canvas-toolbar {
@@ -13,6 +18,9 @@
   padding: 8px;
   background-color: #f3f4f6;
   border-bottom: 1px solid #e5e7eb;
+  z-index: 10;
+  height: 60px;
+  min-height: 60px;
 }
 
 .toolbar-left,
@@ -92,16 +100,20 @@
 }
 
 .canvas-container {
-  flex-grow: 1;
-  overflow: hidden;
+  flex: 1;
   position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: calc(100% - 60px); /* Account for toolbar height */
 }
 
 canvas {
+  display: block;
   width: 100%;
   height: 100%;
   background-color: white;
   box-shadow: inset 0 0 0 1px #e5e7eb;
+  touch-action: none; /* Prevent browser handling of touch gestures */
 }
 
 @media (max-width: 768px) {

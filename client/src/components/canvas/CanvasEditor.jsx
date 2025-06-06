@@ -10,10 +10,12 @@ const CanvasEditor = ({
 }) => {
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [tool, setTool] = useState("pen"); // 'pen' or 'eraser'
-  const [color, setColor] = useState("#000000"); // Default color: black
-  const [thickness, setThickness] = useState(2); // Default thickness
+  const [tool, setTool] = useState("pen");
+  const [color, setColor] = useState("#000000");
+  const [thickness, setThickness] = useState(2);
   const [context, setContext] = useState(null);
+  const saveTimeoutRef = useRef(null);
+  const devicePixelRatioRef = useRef(window.devicePixelRatio || 1);
 
   const colors = [
     { name: "Black", value: "#000000" },
@@ -28,43 +30,56 @@ const CanvasEditor = ({
     { name: "Yellow", value: "#FFFF00" },
   ];
 
-  // Initialize canvas with improved mobile support
+  // Initialize canvas with improved sizing and scaling
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
 
-    // Set canvas dimensions to match parent container
+    // Reset any previous context settings
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+
     const resizeCanvas = () => {
       const container = canvas.parentElement;
-      const devicePixelRatio = window.devicePixelRatio || 1;
+      const dpr = devicePixelRatioRef.current;
 
-      // Set display size
-      canvas.style.width = `${container.clientWidth}px`;
-      canvas.style.height = `${container.clientHeight - 50}px`; // Leave space for toolbar
+      // Get the container's full size
+      const containerWidth = container.clientWidth;
+      const containerHeight = container.clientHeight;
 
-      // Set actual size
-      canvas.width = container.clientWidth * devicePixelRatio;
-      canvas.height = (container.clientHeight - 50) * devicePixelRatio;
+      // Set canvas CSS size to 100% of container
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
 
-      // Scale canvas context
-      ctx.scale(devicePixelRatio, devicePixelRatio);
+      // Set canvas actual dimensions accounting for pixel ratio
+      canvas.width = containerWidth * dpr;
+      canvas.height = containerHeight * dpr;
+
+      // Reset the context transform and apply the scale once
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+
+      // Set up context for drawing
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
     };
 
+    // Initial resize
     resizeCanvas();
+
+    // Handle window resizing
     window.addEventListener("resize", resizeCanvas);
 
-    // Optimize canvas for drawing
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.lineJoin = "round";
-    ctx.lineCap = "round";
-
+    // Set the context for use in other functions
     setContext(ctx);
 
-    // Load initial data if available
+    // Load initial canvas data if available
     if (initialData) {
       const img = new Image();
       img.onload = () => {
+        // Clear canvas before drawing
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.drawImage(img, 0, 0);
       };
       img.src = initialData;
@@ -72,12 +87,18 @@ const CanvasEditor = ({
 
     return () => {
       window.removeEventListener("resize", resizeCanvas);
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
     };
   }, [initialData]);
 
   // Optimize touch handling for mobile
   const getCoordinates = (event) => {
+    if (!canvasRef.current) return { offsetX: 0, offsetY: 0 };
+
     const rect = canvasRef.current.getBoundingClientRect();
+    //const dpr = devicePixelRatioRef.current;
 
     if (event.touches) {
       // Prevent default to avoid scrolling while drawing on mobile
@@ -116,54 +137,72 @@ const CanvasEditor = ({
     };
   }, [context]);
 
-  // Save canvas data when drawing stops
+  // Save canvas data when drawing stops - with debounce
   useEffect(() => {
+    // Only save when user stops drawing
     if (!isDrawing && context) {
-      const canvas = canvasRef.current;
-      const canvasData = canvas.toDataURL("image/png");
-      onUpdateCanvas(canvasData);
+      // Clear any existing timeout
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+
+      // Set a new timeout to save after 600ms of inactivity
+      saveTimeoutRef.current = setTimeout(() => {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const canvasData = canvas.toDataURL("image/jpeg", 0.7);
+          onUpdateCanvas(canvasData);
+        }
+      }, 600);
     }
+
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
   }, [isDrawing, context, onUpdateCanvas]);
 
   const startDrawing = (e) => {
+    if (!context) return;
+
     const { offsetX, offsetY } = getCoordinates(e);
     context.beginPath();
     context.moveTo(offsetX, offsetY);
-    setIsDrawing(true);
 
     // Set drawing styles based on current tool
     if (tool === "pen") {
       context.strokeStyle = color;
       context.lineWidth = thickness;
-      context.lineCap = "round";
-      context.globalCompositeOperation = "source-over"; // Normal drawing mode
+      context.globalCompositeOperation = "source-over";
     } else if (tool === "eraser") {
-      context.globalCompositeOperation = "destination-out"; // True eraser effect
-      context.lineWidth = thickness * 3; // Make eraser bigger for better usability
-      context.lineCap = "round";
+      context.globalCompositeOperation = "destination-out";
+      context.lineWidth = thickness * 3;
     }
+
+    setIsDrawing(true);
   };
 
   const draw = (e) => {
-    if (!isDrawing) return;
+    if (!isDrawing || !context) return;
 
     const { offsetX, offsetY } = getCoordinates(e);
     context.lineTo(offsetX, offsetY);
     context.stroke();
   };
 
-  // Make sure we reset the composite operation when stopping drawing
   const stopDrawing = () => {
-    if (isDrawing) {
+    if (isDrawing && context) {
       context.closePath();
       setIsDrawing(false);
-      // Reset composite operation to default when done
-      context.globalCompositeOperation = "source-over";
+      // Don't reset composite operation here to avoid flicker
     }
   };
 
   const handleReset = () => {
     if (window.confirm("Are you sure you want to clear the canvas?")) {
+      if (!context || !canvasRef.current) return;
+
       const canvas = canvasRef.current;
       context.clearRect(0, 0, canvas.width, canvas.height);
       onUpdateCanvas("");
@@ -171,7 +210,6 @@ const CanvasEditor = ({
   };
 
   const handleCalculate = () => {
-    // This will be implemented later with AI
     alert("Math calculation feature will be implemented soon!");
   };
 

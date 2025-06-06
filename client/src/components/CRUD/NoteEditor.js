@@ -1004,9 +1004,12 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const handleUpdateCanvas = useCallback(
     async (data) => {
       try {
-        setCanvasData(data);
+        // Only update state if data is different to avoid unnecessary re-renders
+        if (canvasData !== data) {
+          setCanvasData(data);
+        }
 
-        // Save canvas data to note
+        // Save canvas data to note with debouncing
         if (note?._id) {
           // Compress data before sending to reduce size
           const compressedData = data ? compressCanvasData(data) : "";
@@ -1017,33 +1020,65 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         }
       } catch (error) {
         console.error("Failed to save canvas data:", error);
-        // You could add user notification here
       }
     },
-    [note, onUpdate]
+    [note, onUpdate, canvasData]
   );
 
-  // helper function for compression
+  // Improved compression function
   const compressCanvasData = (data) => {
-    // If data is empty, return empty string
     if (!data) return "";
 
-    // Basic compression: reduce quality for JPG instead of PNG
-    if (data.startsWith("data:image/png;base64")) {
+    try {
+      // If data is already small enough, return as-is
+      if (data.length < 500000) return data;
+
+      // For larger images, compress more aggressively
       const canvas = document.createElement("canvas");
-      const img = document.createElement("img");
-      img.src = data;
-      canvas.width = img.width;
-      canvas.height = img.height;
+      const img = new Image();
 
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
+      // Set up image loading synchronously
+      const loadImage = () => {
+        return new Promise((resolve) => {
+          img.onload = resolve;
+          img.src = data;
+        });
+      };
 
-      // Convert to JPEG with lower quality (0.6 is a good balance)
-      return canvas.toDataURL("image/jpeg", 0.6);
+      // Use async/await to make sure image is loaded
+      const compress = async () => {
+        await loadImage();
+
+        // Determine if we need to resize for very large images
+        let targetWidth = img.width;
+        let targetHeight = img.height;
+
+        // If image is very large, scale it down
+        const MAX_DIMENSION = 1500;
+        if (img.width > MAX_DIMENSION || img.height > MAX_DIMENSION) {
+          const scale = Math.min(
+            MAX_DIMENSION / img.width,
+            MAX_DIMENSION / img.height
+          );
+          targetWidth = img.width * scale;
+          targetHeight = img.height * scale;
+        }
+
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+
+        // Convert to JPEG with appropriate quality
+        return canvas.toDataURL("image/jpeg", 0.5);
+      };
+
+      return compress();
+    } catch (err) {
+      console.error("Error compressing canvas data:", err);
+      return data; // Fallback to original data
     }
-
-    return data;
   };
 
   const renderLeaf = useCallback(({ attributes, children, leaf }) => {
