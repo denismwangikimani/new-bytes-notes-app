@@ -59,9 +59,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// Increase the body size limit for JSON requests
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
+// Middleware to parse JSON
+app.use(express.json());
 
 //stripe connect
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);

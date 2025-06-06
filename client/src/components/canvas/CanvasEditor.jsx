@@ -117,26 +117,13 @@ const CanvasEditor = ({
   }, [context]);
 
   // Save canvas data when drawing stops
-  // Add inside the useEffect that saves canvas data
-useEffect(() => {
-  if (!isDrawing && context) {
-    const canvas = canvasRef.current;
-    const canvasData = canvas.toDataURL("image/jpeg", 0.7); // Use JPEG with compression
-    
-    // Debug data size
-    const sizeInKB = Math.round(canvasData.length / 1024);
-    console.log(`Canvas data size: ${sizeInKB} KB`);
-    
-    // Only save if there's actually data to save and it's not too large
-    if (canvasData && sizeInKB < 10000) { // 10MB limit
+  useEffect(() => {
+    if (!isDrawing && context) {
+      const canvas = canvasRef.current;
+      const canvasData = canvas.toDataURL("image/png");
       onUpdateCanvas(canvasData);
-    } else if (sizeInKB >= 10000) {
-      console.warn("Canvas data too large, trying with higher compression");
-      const compressedData = canvas.toDataURL("image/jpeg", 0.4);
-      onUpdateCanvas(compressedData);
     }
-  }
-}, [isDrawing, context, onUpdateCanvas]);
+  }, [isDrawing, context, onUpdateCanvas]);
 
   const startDrawing = (e) => {
     const { offsetX, offsetY } = getCoordinates(e);

@@ -635,9 +635,6 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       setCanvasData("");
     }
 
-    // Reset to rich text mode when changing notes (optional)
-    setEditorMode("rich");
-
     const newSlateValue = deserialize(note?.content);
     setSlateValue(
       Array.isArray(newSlateValue) && newSlateValue.length > 0
