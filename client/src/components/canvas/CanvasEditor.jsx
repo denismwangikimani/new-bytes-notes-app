@@ -28,7 +28,7 @@ const CanvasEditor = ({
     { name: "Yellow", value: "#FFFF00" },
   ];
 
-  // Initialize canvas
+  // Initialize canvas with improved mobile support
   useEffect(() => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -36,12 +36,28 @@ const CanvasEditor = ({
     // Set canvas dimensions to match parent container
     const resizeCanvas = () => {
       const container = canvas.parentElement;
-      canvas.width = container.clientWidth;
-      canvas.height = container.clientHeight - 50; // Leave space for toolbar
+      const devicePixelRatio = window.devicePixelRatio || 1;
+
+      // Set display size
+      canvas.style.width = `${container.clientWidth}px`;
+      canvas.style.height = `${container.clientHeight - 50}px`; // Leave space for toolbar
+
+      // Set actual size
+      canvas.width = container.clientWidth * devicePixelRatio;
+      canvas.height = (container.clientHeight - 50) * devicePixelRatio;
+
+      // Scale canvas context
+      ctx.scale(devicePixelRatio, devicePixelRatio);
     };
 
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
+
+    // Optimize canvas for drawing
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
 
     setContext(ctx);
 
@@ -59,14 +75,68 @@ const CanvasEditor = ({
     };
   }, [initialData]);
 
-  // Save canvas data when drawing stops
-  useEffect(() => {
-    if (!isDrawing && context) {
-      const canvas = canvasRef.current;
-      const canvasData = canvas.toDataURL("image/png");
-      onUpdateCanvas(canvasData);
+  // Optimize touch handling for mobile
+  const getCoordinates = (event) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+
+    if (event.touches) {
+      // Prevent default to avoid scrolling while drawing on mobile
+      event.preventDefault();
+      return {
+        offsetX: event.touches[0].clientX - rect.left,
+        offsetY: event.touches[0].clientY - rect.top,
+      };
+    } else {
+      return {
+        offsetX: event.nativeEvent.offsetX,
+        offsetY: event.nativeEvent.offsetY,
+      };
     }
-  }, [isDrawing, context, onUpdateCanvas]);
+  };
+
+  // Use passive: false to prevent default behavior properly
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !context) return;
+
+    // Function to prevent default on touch events
+    const preventDefaultTouch = (e) => e.preventDefault();
+
+    // Add touch event listener with passive: false to enable preventDefault
+    canvas.addEventListener("touchstart", preventDefaultTouch, {
+      passive: false,
+    });
+    canvas.addEventListener("touchmove", preventDefaultTouch, {
+      passive: false,
+    });
+
+    return () => {
+      canvas.removeEventListener("touchstart", preventDefaultTouch);
+      canvas.removeEventListener("touchmove", preventDefaultTouch);
+    };
+  }, [context]);
+
+  // Save canvas data when drawing stops
+  // Add inside the useEffect that saves canvas data
+useEffect(() => {
+  if (!isDrawing && context) {
+    const canvas = canvasRef.current;
+    const canvasData = canvas.toDataURL("image/jpeg", 0.7); // Use JPEG with compression
+    
+    // Debug data size
+    const sizeInKB = Math.round(canvasData.length / 1024);
+    console.log(`Canvas data size: ${sizeInKB} KB`);
+    
+    // Only save if there's actually data to save and it's not too large
+    if (canvasData && sizeInKB < 10000) { // 10MB limit
+      onUpdateCanvas(canvasData);
+    } else if (sizeInKB >= 10000) {
+      console.warn("Canvas data too large, trying with higher compression");
+      const compressedData = canvas.toDataURL("image/jpeg", 0.4);
+      onUpdateCanvas(compressedData);
+    }
+  }
+}, [isDrawing, context, onUpdateCanvas]);
 
   const startDrawing = (e) => {
     const { offsetX, offsetY } = getCoordinates(e);
@@ -79,9 +149,10 @@ const CanvasEditor = ({
       context.strokeStyle = color;
       context.lineWidth = thickness;
       context.lineCap = "round";
+      context.globalCompositeOperation = "source-over"; // Normal drawing mode
     } else if (tool === "eraser") {
-      context.strokeStyle = "#FFFFFF"; // White for eraser
-      context.lineWidth = thickness * 2; // Eraser is typically thicker
+      context.globalCompositeOperation = "destination-out"; // True eraser effect
+      context.lineWidth = thickness * 3; // Make eraser bigger for better usability
       context.lineCap = "round";
     }
   };
@@ -94,28 +165,13 @@ const CanvasEditor = ({
     context.stroke();
   };
 
+  // Make sure we reset the composite operation when stopping drawing
   const stopDrawing = () => {
     if (isDrawing) {
       context.closePath();
       setIsDrawing(false);
-    }
-  };
-
-  // Handle touch events and mouse events
-  const getCoordinates = (event) => {
-    if (event.touches) {
-      // Touch event
-      const rect = canvasRef.current.getBoundingClientRect();
-      return {
-        offsetX: event.touches[0].clientX - rect.left,
-        offsetY: event.touches[0].clientY - rect.top,
-      };
-    } else {
-      // Mouse event
-      return {
-        offsetX: event.nativeEvent.offsetX,
-        offsetY: event.nativeEvent.offsetY,
-      };
+      // Reset composite operation to default when done
+      context.globalCompositeOperation = "source-over";
     }
   };
 

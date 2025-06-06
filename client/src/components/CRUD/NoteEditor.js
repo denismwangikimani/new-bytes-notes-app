@@ -635,6 +635,9 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       setCanvasData("");
     }
 
+    // Reset to rich text mode when changing notes (optional)
+    setEditorMode("rich");
+
     const newSlateValue = deserialize(note?.content);
     setSlateValue(
       Array.isArray(newSlateValue) && newSlateValue.length > 0
@@ -1002,22 +1005,49 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
   // Handle canvas updates
   const handleUpdateCanvas = useCallback(
-    (data) => {
-      setCanvasData(data);
+    async (data) => {
+      try {
+        setCanvasData(data);
 
-      // Save canvas data to note
-      if (note?._id) {
-        // For now, we'll store canvas data in a special format in the note content
-        // Later we might want to store it in a separate field in the database
-        //const canvasContent = `<div class="canvas-data">${data}</div>`;
-        onUpdate(note._id, {
-          canvasData: data,
-          // Don't update the main content when saving canvas data
-        });
+        // Save canvas data to note
+        if (note?._id) {
+          // Compress data before sending to reduce size
+          const compressedData = data ? compressCanvasData(data) : "";
+
+          await onUpdate(note._id, {
+            canvasData: compressedData,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to save canvas data:", error);
+        // You could add user notification here
       }
     },
     [note, onUpdate]
   );
+
+  // helper function for compression
+  const compressCanvasData = (data) => {
+    // If data is empty, return empty string
+    if (!data) return "";
+
+    // Basic compression: reduce quality for JPG instead of PNG
+    if (data.startsWith("data:image/png;base64")) {
+      const canvas = document.createElement("canvas");
+      const img = document.createElement("img");
+      img.src = data;
+      canvas.width = img.width;
+      canvas.height = img.height;
+
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+
+      // Convert to JPEG with lower quality (0.6 is a good balance)
+      return canvas.toDataURL("image/jpeg", 0.6);
+    }
+
+    return data;
+  };
 
   const renderLeaf = useCallback(({ attributes, children, leaf }) => {
     let el = <>{children}</>;
