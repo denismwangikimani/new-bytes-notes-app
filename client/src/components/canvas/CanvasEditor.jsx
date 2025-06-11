@@ -1,6 +1,7 @@
 /* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useRef, useState, useEffect, useCallback } from "react";
+import axios from "axios";
 import { RefreshCw, Eraser, Pen, Calculator } from "lucide-react";
 import "./CanvasEditor.css";
 import {
@@ -47,6 +48,9 @@ const CanvasEditor = ({
     { name: "Grey", value: "#808080" },
     { name: "Yellow", value: "#FFFF00" },
   ];
+
+  // API key should be from your .env file
+  const API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
 
   // Initialize canvas with improved sizing and scaling
   useEffect(() => {
@@ -123,55 +127,6 @@ const CanvasEditor = ({
     };
   }, [initialData]);
 
-  // Detect equals sign and trigger calculation
-  const checkForEqualsSign = useCallback(
-    async (canvasData) => {
-      if (!canvasData || isCalculating) return;
-
-      // Check if the canvas data has changed enough to warrant recalculation
-      if (!hasEquationChanged(lastCanvasData, canvasData)) return;
-
-      setLastCanvasData(canvasData);
-
-      // Clear any existing timeout to prevent multiple calculations
-      if (analyzeTimeoutRef.current) {
-        clearTimeout(analyzeTimeoutRef.current);
-      }
-
-      // Set a timeout to allow the user to finish drawing
-      analyzeTimeoutRef.current = setTimeout(async () => {
-        setIsCalculating(true);
-        try {
-          const results = await analyzeMathExpression(canvasData, variables);
-          setCalculationResults(results);
-
-          // Update variables if any assignments were made
-          const newVars = { ...variables };
-          let varsChanged = false;
-
-          results.forEach((result) => {
-            if (result.assign && result.expr && result.result !== undefined) {
-              newVars[result.expr] = result.result;
-              varsChanged = true;
-            }
-          });
-
-          if (varsChanged) {
-            setVariables(newVars);
-          }
-
-          // Draw the results on the canvas
-          drawResults(results);
-        } catch (error) {
-          console.error("Error calculating result:", error);
-        } finally {
-          setIsCalculating(false);
-        }
-      }, 1000); // Wait 1 second after drawing stops
-    },
-    [lastCanvasData, isCalculating, variables]
-  );
-
   // Draw the calculation results on the canvas
   const drawResults = useCallback(
     (results) => {
@@ -194,16 +149,14 @@ const CanvasEditor = ({
         // Draw the original clean drawing
         context.drawImage(img, 0, 0);
 
-        // Calculate a better position for results - near the equation
-        const padding = 20;
-        const resultX = padding;
-        const resultY =
-          canvas.height / devicePixelRatioRef.current - answerAreaHeight;
+        // Make the answer area smaller - just a thin strip at the bottom
+        const padding = 10;
+        const resultY = canvas.height / devicePixelRatioRef.current - 40; // Smaller area
 
         // Draw a subtle background for the answer area
         context.save();
-        context.fillStyle = "rgba(245, 247, 250, 0.85)";
-        context.fillRect(0, resultY - padding, canvas.width, answerAreaHeight);
+        context.fillStyle = "rgba(245, 247, 250, 0.7)";
+        context.fillRect(0, resultY - padding, canvas.width, 50); // Smaller height
 
         // Draw a subtle separator line
         context.strokeStyle = "#e5e7eb";
@@ -214,20 +167,20 @@ const CanvasEditor = ({
         context.stroke();
 
         // Set text style for results
-        context.font = "22px Arial";
+        context.font = "18px Arial"; // Slightly smaller font
         context.fillStyle = "#4f46e5";
 
-        // Draw each result
-        let currentY = resultY + 10;
-        results.forEach((result) => {
-          if (result.expr && result.result !== undefined) {
-            const text = `${result.assign ? `${result.expr} = ` : ""}${
-              result.result
-            }`;
-            context.fillText(text, resultX, currentY);
-            currentY += 30;
-          }
-        });
+        // Draw each result on a single line if possible
+        let resultString = results
+          .map(
+            (result) =>
+              `${result.assign ? `${result.expr} = ` : ""}${result.result}`
+          )
+          .join("  |  ");
+
+        // If result string is too long, truncate it
+        const resultX = padding;
+        context.fillText(resultString, resultX, resultY + 20);
 
         context.restore();
 
@@ -238,6 +191,94 @@ const CanvasEditor = ({
       img.src = cleanCanvasData;
     },
     [context, onUpdateCanvas, cleanCanvasData]
+  );
+
+  // Detect equals sign and trigger calculation
+  const checkForEqualsSign = useCallback(
+    async (canvasData) => {
+      if (!canvasData || isCalculating) return;
+
+      // Only auto-calculate if data has changed significantly
+      if (!hasEquationChanged(lastCanvasData, canvasData)) return;
+
+      setLastCanvasData(canvasData);
+
+      // Clear any existing timeout to prevent multiple calculations
+      if (analyzeTimeoutRef.current) {
+        clearTimeout(analyzeTimeoutRef.current);
+      }
+
+      // Check if the canvas contains an equals sign using the Gemini API
+      // Only auto-calculate if it does
+      analyzeTimeoutRef.current = setTimeout(async () => {
+        try {
+          // This is a lightweight check just to see if an equals sign or horizontal line exists
+          const hasEqualsSignResponse = await axios.post(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`,
+            {
+              contents: [
+                {
+                  parts: [
+                    {
+                      text: "Does this image contain an equals sign (=) or a horizontal line (like ___) that indicates a calculation should be performed? Answer only YES or NO.",
+                    },
+                    {
+                      inline_data: {
+                        mime_type: "image/jpeg",
+                        data: canvasData.split(",")[1] || canvasData,
+                      },
+                    },
+                  ],
+                },
+              ],
+              generation_config: {
+                temperature: 0.1,
+                max_output_tokens: 10,
+              },
+            }
+          );
+
+          const quickCheckResult =
+            hasEqualsSignResponse.data.candidates[0].content.parts[0].text;
+          const shouldCalculate = /yes/i.test(quickCheckResult);
+
+          if (shouldCalculate) {
+            // Only then do the full calculation
+            setIsCalculating(true);
+            const results = await analyzeMathExpression(canvasData, variables);
+            setCalculationResults(results);
+
+            // Update variables and draw results as before
+            const newVars = { ...variables };
+            let varsChanged = false;
+
+            results.forEach((result) => {
+              if (result.assign && result.expr && result.result !== undefined) {
+                newVars[result.expr] = result.result;
+                varsChanged = true;
+              }
+            });
+
+            if (varsChanged) {
+              setVariables(newVars);
+            }
+
+            drawResults(results);
+          }
+        } catch (error) {
+          console.error("Error checking for equals sign:", error);
+        } finally {
+          setIsCalculating(false);
+        }
+      }, 1000); // Wait 1 second after drawing stops
+    },
+    [
+      lastCanvasData,
+      isCalculating,
+      variables,
+      analyzeMathExpression,
+      drawResults,
+    ]
   );
 
   const saveCleanCanvasData = () => {

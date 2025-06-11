@@ -79,20 +79,33 @@ export const analyzeMathExpression = async (imageData, variables = {}) => {
 const buildPrompt = (variables) => {
   const variablesStr = JSON.stringify(variables, null, 2);
 
-  return `You have been given an image with some mathematical expressions, equations, or graphical problems, and you need to solve them.
+  return `You have been given an image with some mathematical expressions or equations, and you need to solve them.
 
 Note: Use the PEMDAS rule for solving mathematical expressions. PEMDAS stands for the Priority Order: Parentheses, Exponents, Multiplication and Division (from left to right), Addition and Subtraction (from left to right).
 
-Following are the cases:
-1. Simple mathematical expressions like 2 + 2, 3 * 4, 5 / 6, 7 - 8, etc.: Solve and return the answer in the format: [{"expr": "given expression", "result": calculated answer}].
-2. Set of Equations like x^2 + 2x + 1 = 0, 3y + 4x = 0, etc.: Solve for variables, return as [{"expr": "x", "result": 2, "assign": true}, {"expr": "y", "result": 5, "assign": true}].
-3. Assigning values to variables like x = 4, y = 5, z = 6: Return [{"expr": "x", "result": 4, "assign": true}]
-4. Graphical Math problems or diagrams: Return [{"expr": "given problem description", "result": calculated answer}]
+IMPORTANT: Only calculate and return an answer if ONE of these is true:
+1. The image contains an equals sign (=)
+2. The image shows a vertical calculation with a horizontal line (like ___ or ——) underneath numbers
 
-Look for equals signs (=) or horizontal lines (like _____) that indicate calculation is needed.
-For vertical calculations (like addition with numbers stacked), treat horizontal lines as equals signs.
+For vertical calculations, look for these patterns:
+- Numbers stacked with an operator (+, -, *, or /) either before or after the numbers
+- A horizontal line underneath (like ___ or ——)
+- Examples:
+  * "8 [newline] 8+ [newline] ___" means 8+8 and should return 16
+  * "8 [newline] *8 [newline] ___" means 8*8 and should return 64 
+  * "8 [newline] 8- [newline] ___" means 8-8 and should return 0
+  * "8 [newline] /2 [newline] ___" means 8/2 and should return 4
+  * The operator can appear before OR after a number
+
+Return your answer in the format:
+[{"expr": "given expression", "result": calculated answer}]
+
+For variable assignments (like x = 5), return:
+[{"expr": "x", "result": 5, "assign": true}]
 
 Here is a dictionary of user-assigned variables to use: ${variablesStr}.
+
+IMPORTANT: DO NOT calculate or return results if there is no equals sign or horizontal line indicating calculation should be performed.
 RETURN ONLY THE JSON ARRAY WITH NO EXPLANATIONS.`;
 };
 

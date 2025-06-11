@@ -161,13 +161,15 @@ canvas {
   bottom: 0;
   left: 0;
   right: 0;
-  min-height: 40px;
-  background-color: rgba(249, 250, 251, 0.8);
+  min-height: 10px;
+  max-height: 15px;
+  background-color: rgba(249, 250, 251, 0.7);
   border-top: 1px solid #e5e7eb;
   padding: 8px 16px;
   font-family: Arial, sans-serif;
   color: #4f46e5;
   font-size: 18px;
+  overflow-y: auto;
 }
 
 @keyframes spin {
