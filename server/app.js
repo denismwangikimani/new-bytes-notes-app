@@ -138,67 +138,141 @@ async function setupChangeStreams(socketIoInstance) {
   }
 }
 
-// Socket.io connection handler
+// Helper function (you might want to move this to a shared utility or import if buildPrompt is complex)
+function buildCanvasMathPrompt(variables) {
+  const variablesStr = JSON.stringify(variables, null, 2);
+  return `You have been given an image with some mathematical expressions or equations, and you need to solve them.
+Note: Use the PEMDAS rule for solving mathematical expressions. PEMDAS stands for the Priority Order: Parentheses, Exponents, Multiplication and Division (from left to right), Addition and Subtraction (from left to right).
+IMPORTANT: Only calculate and return an answer if ONE of these is true:
+1. The image contains an equals sign (=)
+2. The image shows a vertical calculation with a horizontal line (like ___ or ——) underneath numbers
+For vertical calculations, be very attentive to these specific patterns:
+- Numbers stacked with an operator (+, -, *, or /) either before or after the numbers
+- A horizontal line underneath (like ___ or ——)
+- Examples of vertical calculations to recognize:
+  * "8" on one line, followed by "8+" on the next line, followed by "___" means 8+8 and should return 16
+  * "8" on one line, followed by "*8" on the next line, followed by "___" means 8*8 and should return 64 
+  * "8" on one line, followed by "8-" on the next line, followed by "___" means 8-8 and should return 0
+  * "8" on one line, followed by "/2" on the next line, followed by "___" means 8/2 and should return 4
+  * Also recognize if the numbers are aligned in a column for addition/subtraction
+Pay careful attention to the arrangement and alignment of numbers and operators.
+Return your answer in the format:
+[{"expr": "given expression", "result": calculated answer}]
+For variable assignments (like x = 5), return:
+[{"expr": "x", "result": 5, "assign": true}]
+Here is a dictionary of user-assigned variables to use: ${variablesStr}.
+IMPORTANT: DO NOT calculate or return results if there is no equals sign or horizontal line indicating calculation should be performed.
+RETURN ONLY THE JSON ARRAY WITH NO EXPLANATIONS.`;
+}
+
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
-  // Handle canvas data for real-time math detection
   socket.on("canvas_data", async (data) => {
     try {
-      const { canvasData, userId, noteId, variables } = data;
+      const { canvasData, userId, noteId, variables = {} } = data;
 
-      // Process the canvas data to detect math expressions
-      // We'll use your existing Gemini API integration
+      if (!canvasData || !noteId) {
+        // Optionally emit an error back to the client
+        // socket.emit("calculation_error", { message: "Canvas data or Note ID missing" });
+        return;
+      }
+
+      const geminiPrompt = buildCanvasMathPrompt(variables);
+
       const response = await axios.post(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
         {
           contents: [
             {
               parts: [
-                {
-                  text: `Does this image contain an equals sign (=) or a horizontal line (like ___ or ——) that indicates a calculation should be performed? If yes, what is the calculation and the answer? Answer in JSON format: { "containsCalculation": true/false, "calculation": "expression", "result": "answer" }`,
-                },
+                { text: geminiPrompt },
                 {
                   inline_data: {
-                    mime_type: "image/jpeg",
+                    mime_type: "image/jpeg", // Assuming JPEG, adjust if PNG from client
                     data: canvasData.split(",")[1] || canvasData,
                   },
                 },
               ],
             },
           ],
-          generation_config: { temperature: 0.1, max_output_tokens: 100 },
+          generation_config: { temperature: 0.1, max_output_tokens: 1024 }, // Adjusted max_output_tokens
         }
       );
 
-      // Extract and parse the response
-      let calculationResult = { containsCalculation: false };
-      try {
-        const responseText = response.data.candidates[0].content.parts[0].text;
-        calculationResult = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error("Error parsing Gemini response:", parseError);
-      }
+      let results = [];
+      let newVariables = { ...variables };
+      let responseText = "";
 
-      // Send result back to the client
-      socket.emit("calculation_result", calculationResult);
-
-      // Save canvas data to database if it contains a calculation
-      if (calculationResult.containsCalculation && noteId) {
-        // Save to database using your existing Note model
-        await Note.findByIdAndUpdate(
-          noteId,
-          {
-            canvasData: canvasData,
-            lastCalculation: calculationResult,
-          },
-          { new: true }
+      if (
+        response.data.candidates &&
+        response.data.candidates.length > 0 &&
+        response.data.candidates[0].content &&
+        response.data.candidates[0].content.parts &&
+        response.data.candidates[0].content.parts.length > 0
+      ) {
+        responseText = response.data.candidates[0].content.parts[0].text;
+        try {
+          const match = responseText.match(/(\[[\s\S]*\])/);
+          if (match && match[0]) {
+            results = JSON.parse(match[0]);
+            // Normalize results and extract variables
+            results = results.map((item) => ({
+              expr: item.expr || "",
+              result: item.result,
+              assign: item.assign === true,
+            }));
+            results.forEach((result) => {
+              if (result.assign && result.expr) {
+                newVariables[result.expr] = result.result;
+              }
+            });
+          } else {
+            console.warn(
+              "No JSON array found in Gemini response via WebSocket:",
+              responseText
+            );
+          }
+        } catch (parseError) {
+          console.error(
+            "Error parsing Gemini response via WebSocket:",
+            parseError,
+            responseText
+          );
+        }
+      } else {
+        console.warn(
+          "Unexpected Gemini response structure via WebSocket:",
+          response.data
         );
       }
+
+      // Update note in DB
+      const updatedNote = await Note.findByIdAndUpdate(
+        noteId,
+        {
+          // canvasData: canvasData, // The raw canvas data is already saved by client call
+          lastCalculation: {
+            results,
+            timestamp: new Date(),
+            rawResponse: responseText,
+          },
+          variables: newVariables,
+        },
+        { new: true }
+      );
+
+      // Emit structured result back to the specific client
+      socket.emit("calculation_result", { results, variables: newVariables });
     } catch (error) {
-      console.error("Error processing canvas data:", error);
+      console.error(
+        "Error processing canvas data via WebSocket:",
+        error.message
+      );
+      // Potentially emit an error back to the client
       socket.emit("calculation_error", {
-        message: "Failed to process calculation",
+        message: "Failed to process calculation via WebSocket",
+        error: error.message,
       });
     }
   });

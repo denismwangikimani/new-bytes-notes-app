@@ -170,7 +170,7 @@ const CanvasEditor = ({
 
     // Initialize WebSocket connection
     socketRef.current = io(
-      process.env.REACT_APP_API_URL || "http://localhost:3000"
+      "https://new-bytes-notes-backend.onrender.com" || "http://localhost:3000"
     );
 
     // Set up WebSocket event listeners
@@ -195,11 +195,14 @@ const CanvasEditor = ({
     // Load variables for this note
     if (noteId) {
       axios
-        .get(`/api/notes/${noteId}/variables`, {
-          headers: {
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
-          },
-        })
+        .get(
+          `https://new-bytes-notes-backend.onrender.com/api/notes/${noteId}/variables`,
+          {
+            headers: {
+              Authorization: `Bearer ${localStorage.getItem("token")}`,
+            },
+          }
+        )
         .then((response) => {
           if (response.data && response.data.variables) {
             setVariables(response.data.variables);
@@ -263,16 +266,22 @@ const CanvasEditor = ({
     context.closePath();
     setIsDrawing(false);
 
-    // Save clean canvas data and trigger analysis
-    const cleanData = saveCleanCanvasData();
+    // Save clean canvas data
+    const cleanData = saveCleanCanvasData(); // This sets CanvasEditor's cleanCanvasData state
 
-    // Debounce sending to WebSocket
+    // Call onUpdateCanvas immediately to save the drawing
+    if (cleanData && onUpdateCanvas) {
+      onUpdateCanvas(cleanData); // --- ADD THIS TO IMMEDIATELY SAVE THE DRAWING ---
+    }
+
+    // Debounce sending to WebSocket for AI processing
     if (sendCanvasDataTimeoutRef.current) {
       clearTimeout(sendCanvasDataTimeoutRef.current);
     }
 
     sendCanvasDataTimeoutRef.current = setTimeout(() => {
-      if (socketRef.current && cleanData) {
+      if (socketRef.current && cleanData && noteId) {
+        // Ensure noteId exists
         // Send canvas data for analysis through WebSocket
         socketRef.current.emit("canvas_data", {
           canvasData: cleanData,
@@ -281,10 +290,12 @@ const CanvasEditor = ({
           variables: variables,
         });
 
-        // Also send via HTTP for more reliable processing
-        checkForMathExpression(cleanData);
+        // Consider if checkForMathExpression HTTP call is still needed here
+        // if WebSocket handles the primary AI analysis.
+        // For now, let's assume WebSocket is the primary path for "immediate" AI response.
+        // checkForMathExpression(cleanData);
       }
-    }, 800);
+    }, 800); // Debounce for AI/socket updates
   };
 
   // Helper function to get coordinates from mouse or touch event
@@ -346,10 +357,9 @@ const CanvasEditor = ({
       analyzeTimeoutRef.current = setTimeout(async () => {
         try {
           setIsCalculating(true);
-
           // Make API call to analyze math expression
           const response = await axios.post(
-            "/api/analyze-math",
+            `https://new-bytes-notes-backend.onrender.com/api/analyze-math`, // MODIFIED LINE
             {
               canvasData,
               noteId,
