@@ -15,6 +15,7 @@ import {
   //Link as LinkIcon,
 } from "lucide-react";
 import DOMPurify from "dompurify";
+import { io } from "socket.io-client";
 import MediaDialog from "../MediaDialog";
 import EditorHeader from "./EditorHeader";
 import { useSidebar } from "./SidebarContext";
@@ -580,6 +581,9 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     type: null,
   });
 
+  // Add socket.io connection
+  const socketRef = useRef(null);
+
   // editor mode state
   const [editorMode, setEditorMode] = useState("rich"); // "rich" or "canvas"
   const [canvasData, setCanvasData] = useState(""); // For storing canvas drawing data
@@ -622,6 +626,41 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   }, [note?.content]);
 
   const [slateValue, setSlateValue] = useState(initialValue);
+
+  // Connect to socket.io server on component mount
+  useEffect(() => {
+    // Connect to the server
+    socketRef.current = io(
+      process.env.REACT_APP_API_URL || "http://localhost:3000"
+    );
+
+    // Set up event listeners for real-time updates
+    socketRef.current.on("note_updated", (updatedNote) => {
+      if (updatedNote.noteId === note?._id && !isAutoSaving.current) {
+        // Update local state if the update came from another client
+        if (updatedNote.canvasData && canvasData !== updatedNote.canvasData) {
+          setCanvasData(updatedNote.canvasData);
+        }
+
+        if (updatedNote.content && updatedNote.title) {
+          const newSlateValue = deserialize(updatedNote.content);
+          setSlateValue(
+            Array.isArray(newSlateValue) && newSlateValue.length > 0
+              ? newSlateValue
+              : [{ type: "paragraph", children: [{ text: "" }] }]
+          );
+          setTitle(updatedNote.title);
+        }
+      }
+    });
+
+    // Clean up on unmount
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
+  }, [note?._id]);
 
   useEffect(() => {
     if (isAutoSaving.current) {
@@ -1001,30 +1040,6 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   }, []);
 
   // Handle canvas updates
-  const handleUpdateCanvas = useCallback(
-    async (data) => {
-      try {
-        // Only update state if data is different to avoid unnecessary re-renders
-        if (canvasData !== data) {
-          setCanvasData(data);
-        }
-
-        // Save canvas data to note with debouncing
-        if (note?._id) {
-          // Compress data before sending to reduce size
-          const compressedData = data ? compressCanvasData(data) : "";
-
-          await onUpdate(note._id, {
-            canvasData: compressedData,
-          });
-        }
-      } catch (error) {
-        console.error("Failed to save canvas data:", error);
-      }
-    },
-    [note, onUpdate, canvasData]
-  );
-
   // Improved compression function
   const compressCanvasData = (data) => {
     if (!data) return "";
@@ -1090,6 +1105,46 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       return data; // Fallback to original data
     }
   };
+
+  const handleUpdateCanvas = useCallback(
+    async (data) => {
+      try {
+        // Only update state if data is different to avoid unnecessary re-renders
+        if (canvasData !== data) {
+          setCanvasData(data);
+
+          // Save canvas data to note with debouncing
+          if (note?._id) {
+            // Compress data before sending to reduce size
+            const compressedData = data ? compressCanvasData(data) : "";
+
+            // Set isAutoSaving flag to avoid double updates
+            isAutoSaving.current = true;
+
+            // Update via API
+            await onUpdate(note._id, {
+              canvasData: compressedData,
+            });
+
+            // Also emit to socket for real-time syncing
+            if (socketRef.current) {
+              socketRef.current.emit("canvas_update", {
+                noteId: note._id,
+                canvasData: compressedData,
+              });
+            }
+
+            setTimeout(() => {
+              isAutoSaving.current = false;
+            }, 100);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to save canvas data:", error);
+      }
+    },
+    [note, onUpdate, canvasData, compressCanvasData]
+  );
 
   const renderLeaf = useCallback(({ attributes, children, leaf }) => {
     let el = <>{children}</>;
@@ -1333,6 +1388,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     [editor, CustomEditor, HOTKEYS]
   ); // Added HOTKEYS
 
+  // Modify handleSlateChange to use debounced socket.io updates
   const handleSlateChange = useCallback(
     (newValue) => {
       setSlateValue(newValue); // Main state update
@@ -1361,13 +1417,25 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         setSelectionPosition(null);
         setSelectedText("");
       }
-      // Removed the explicit scroll restoration from here.
-      // Slate and the browser should handle keeping the cursor in view during typing.
-      // If scroll jumps persist, they are more likely due to layout shifts from re-renders
-      // or CSS, rather than needing manual correction on every change.
+
+      // Add debounced socket.io update
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+
+      updateTimeoutRef.current = setTimeout(() => {
+        if (note?._id && !isAutoSaving.current && socketRef.current) {
+          const currentContent = serialize(newValue);
+          socketRef.current.emit("content_update", {
+            noteId: note._id,
+            content: currentContent,
+            title: title
+          });
+        }
+      }, 1000); // 1s debounce
     },
-    [editor]
-  ); // Removed scroll restoration logic from here
+    [editor, note?._id, title]
+  );
 
   // ... (rest of your AI handlers, modal handlers, etc.)
   // Ensure all other handlers that interact with the editor or its state are also memoized if necessary.

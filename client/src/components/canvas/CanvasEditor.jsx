@@ -1,13 +1,10 @@
-/* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import axios from "axios";
+import { io } from "socket.io-client";
 import { RefreshCw, Eraser, Pen, Calculator } from "lucide-react";
 import "./CanvasEditor.css";
-import {
-  analyzeMathExpression,
-  hasEquationChanged,
-} from "../../services/canvasMathService";
+import { hasEquationChanged } from "../../services/canvasMathService";
 
 const CanvasEditor = ({
   onSwitchMode,
@@ -15,117 +12,38 @@ const CanvasEditor = ({
   onUpdateCanvas,
   initialData,
 }) => {
-  // Existing state variables
+  // Canvas refs and state variables
   const canvasRef = useRef(null);
+  const socketRef = useRef(null);
+  const sendCanvasDataTimeoutRef = useRef(null);
+  const analyzeTimeoutRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [tool, setTool] = useState("pen");
   const [color, setColor] = useState("#000000");
   const [thickness, setThickness] = useState(2);
   const [context, setContext] = useState(null);
-  const saveTimeoutRef = useRef(null);
+  const [variables, setVariables] = useState({});
   const devicePixelRatioRef = useRef(window.devicePixelRatio || 1);
 
-  // New state variables for math calculations
+  // Math calculation states
   const [lastCanvasData, setLastCanvasData] = useState("");
   const [calculationResults, setCalculationResults] = useState([]);
   const [isCalculating, setIsCalculating] = useState(false);
-  const [variables, setVariables] = useState({});
-  const analyzeTimeoutRef = useRef(null);
+  const [cleanCanvasData, setCleanCanvasData] = useState("");
+  const saveTimeoutRef = useRef(null);
 
-  // New state variables for clean canvas data
-  const [cleanCanvasData, setCleanCanvasData] = useState(""); // Store drawing without answers
-  const answerAreaHeight = 100; // Reserved space at bottom for answers
-
+  // Available pen colors
   const colors = [
     { name: "Black", value: "#000000" },
     { name: "Red", value: "#FF0000" },
-    { name: "Orange", value: "#FFA500" },
-    { name: "Green", value: "#008000" },
     { name: "Blue", value: "#0000FF" },
-    { name: "Pink", value: "#FFC0CB" },
+    { name: "Green", value: "#008000" },
     { name: "Purple", value: "#800080" },
-    { name: "Brown", value: "#A52A2A" },
-    { name: "Grey", value: "#808080" },
+    { name: "Orange", value: "#FFA500" },
     { name: "Yellow", value: "#FFFF00" },
+    { name: "Gray", value: "#808080" },
+    { name: "White", value: "#FFFFFF" },
   ];
-
-  // API key should be from your .env file
-  const API_KEY = process.env.REACT_APP_GEMINI_API_KEY;
-
-  // Initialize canvas with improved sizing and scaling
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d", {
-      alpha: false,
-      desynchronized: true, // Improves performance
-      willReadFrequently: false,
-    });
-
-    // Reset any previous context settings
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-
-    const resizeCanvas = () => {
-      const container = canvas.parentElement;
-      const dpr = window.devicePixelRatio || 1;
-      devicePixelRatioRef.current = dpr;
-
-      // Store physical container dimensions
-      const containerWidth = container.clientWidth;
-      const containerHeight = container.clientHeight;
-
-      // Set canvas CSS size (display size)
-      canvas.style.width = `${containerWidth}px`;
-      canvas.style.height = `${containerHeight}px`;
-
-      // Set canvas internal dimensions (drawing buffer size)
-      canvas.width = Math.floor(containerWidth * dpr);
-      canvas.height = Math.floor(containerHeight * dpr);
-
-      // Scale all drawing operations by the dpr
-      ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset current transform
-      ctx.scale(dpr, dpr);
-
-      // Configure for high quality drawing
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
-      ctx.miterLimit = 2;
-    };
-
-    // Initial resize
-    resizeCanvas();
-
-    // Handle window resizing
-    window.addEventListener("resize", resizeCanvas);
-
-    // Set the context for use in other functions
-    setContext(ctx);
-
-    // Load initial canvas data if available
-    if (initialData) {
-      const img = new Image();
-      img.onload = () => {
-        // Clear canvas before drawing
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, 0, 0);
-
-        // Save as clean data too
-        setCleanCanvasData(initialData);
-      };
-      img.src = initialData;
-    }
-
-    return () => {
-      window.removeEventListener("resize", resizeCanvas);
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-      if (analyzeTimeoutRef.current) {
-        clearTimeout(analyzeTimeoutRef.current);
-      }
-    };
-  }, [initialData]);
 
   // Draw the calculation results on the canvas
   const drawResults = useCallback(
@@ -139,9 +57,8 @@ const CanvasEditor = ({
         return;
 
       const canvas = canvasRef.current;
-
-      // First, restore the clean drawing
       const img = new Image();
+
       img.onload = () => {
         // Clear the canvas
         context.clearRect(0, 0, canvas.width, canvas.height);
@@ -149,38 +66,46 @@ const CanvasEditor = ({
         // Draw the original clean drawing
         context.drawImage(img, 0, 0);
 
-        // Make the answer area smaller - just a thin strip at the bottom
+        // Prepare the result area
         const padding = 10;
-        const resultY = canvas.height / devicePixelRatioRef.current - 40; // Smaller area
+        const resultY = canvas.height / devicePixelRatioRef.current - 40;
 
-        // Draw a subtle background for the answer area
+        // Draw a subtle background
         context.save();
-        context.fillStyle = "rgba(245, 247, 250, 0.7)";
-        context.fillRect(0, resultY - padding, canvas.width, 50); // Smaller height
+        context.fillStyle = "rgba(245, 247, 250, 0.85)";
+        context.fillRect(
+          0,
+          resultY - padding,
+          canvas.width / devicePixelRatioRef.current,
+          50
+        );
 
-        // Draw a subtle separator line
+        // Draw a separator line
         context.strokeStyle = "#e5e7eb";
         context.lineWidth = 1;
         context.beginPath();
         context.moveTo(0, resultY - padding);
-        context.lineTo(canvas.width, resultY - padding);
+        context.lineTo(
+          canvas.width / devicePixelRatioRef.current,
+          resultY - padding
+        );
         context.stroke();
 
-        // Set text style for results
-        context.font = "18px Arial"; // Slightly smaller font
+        // Set text style
+        context.font = "18px Arial";
         context.fillStyle = "#4f46e5";
 
-        // Draw each result on a single line if possible
-        let resultString = results
-          .map(
-            (result) =>
-              `${result.assign ? `${result.expr} = ` : ""}${result.result}`
-          )
-          .join("  |  ");
+        // Format and draw results
+        const resultStrings = results.map(
+          (result) =>
+            `${result.assign ? `${result.expr} = ` : ""}${result.result}`
+        );
 
-        // If result string is too long, truncate it
-        const resultX = padding;
-        context.fillText(resultString, resultX, resultY + 20);
+        let x = padding;
+        for (const resultString of resultStrings) {
+          context.fillText(resultString, x, resultY + 20);
+          x += context.measureText(resultString).width + 20; // Add spacing between results
+        }
 
         context.restore();
 
@@ -188,138 +113,123 @@ const CanvasEditor = ({
         const canvasDataWithResults = canvas.toDataURL("image/png", 1.0);
         onUpdateCanvas(canvasDataWithResults);
       };
+
       img.src = cleanCanvasData;
     },
     [context, onUpdateCanvas, cleanCanvasData]
   );
 
-  // Detect equals sign and trigger calculation
-  const checkForEqualsSign = useCallback(
-    async (canvasData) => {
-      if (!canvasData || isCalculating) return;
+  // Initialize canvas and WebSocket connection
+  useEffect(() => {
+    // Canvas initialization
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d", {
+      alpha: false,
+      desynchronized: true,
+      willReadFrequently: false,
+    });
 
-      // Only auto-calculate if data has changed significantly
-      if (!hasEquationChanged(lastCanvasData, canvasData)) return;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-      setLastCanvasData(canvasData);
+    const resizeCanvas = () => {
+      const container = canvas.parentElement;
+      const dpr = window.devicePixelRatio || 1;
+      devicePixelRatioRef.current = dpr;
 
-      // Clear any existing timeout to prevent multiple calculations
-      if (analyzeTimeoutRef.current) {
-        clearTimeout(analyzeTimeoutRef.current);
-      }
+      const containerWidth = container.clientWidth;
+      const containerHeight = container.clientHeight;
 
-      // Check if the canvas contains an equals sign using the Gemini API
-      // Only auto-calculate if it does
-      analyzeTimeoutRef.current = setTimeout(async () => {
-        try {
-          // This is a lightweight check just to see if an equals sign or horizontal line exists
-          const hasEqualsSignResponse = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`,
-            {
-              contents: [
-                {
-                  parts: [
-                    {
-                      text: "Does this image contain an equals sign (=) or a horizontal line (like ___) that indicates a calculation should be performed? Answer only YES or NO.",
-                    },
-                    {
-                      inline_data: {
-                        mime_type: "image/jpeg",
-                        data: canvasData.split(",")[1] || canvasData,
-                      },
-                    },
-                  ],
-                },
-              ],
-              generation_config: {
-                temperature: 0.1,
-                max_output_tokens: 10,
-              },
-            }
-          );
+      canvas.style.width = `${containerWidth}px`;
+      canvas.style.height = `${containerHeight}px`;
+      canvas.width = Math.floor(containerWidth * dpr);
+      canvas.height = Math.floor(containerHeight * dpr);
 
-          const quickCheckResult =
-            hasEqualsSignResponse.data.candidates[0].content.parts[0].text;
-          const shouldCalculate = /yes/i.test(quickCheckResult);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.miterLimit = 2;
+    };
 
-          if (shouldCalculate) {
-            // Only then do the full calculation
-            setIsCalculating(true);
-            const results = await analyzeMathExpression(canvasData, variables);
-            setCalculationResults(results);
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
+    setContext(ctx);
 
-            // Update variables and draw results as before
-            const newVars = { ...variables };
-            let varsChanged = false;
+    // Load initial canvas data if available
+    if (initialData) {
+      const img = new Image();
+      img.onload = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        setCleanCanvasData(initialData);
+      };
+      img.src = initialData;
+    }
 
-            results.forEach((result) => {
-              if (result.assign && result.expr && result.result !== undefined) {
-                newVars[result.expr] = result.result;
-                varsChanged = true;
-              }
-            });
+    // Initialize WebSocket connection
+    socketRef.current = io(
+      process.env.REACT_APP_API_URL || "http://localhost:3000"
+    );
 
-            if (varsChanged) {
-              setVariables(newVars);
-            }
+    // Set up WebSocket event listeners
+    socketRef.current.on("calculation_result", (result) => {
+      if (result.results && result.results.length > 0) {
+        setCalculationResults(result.results);
+        drawResults(result.results);
 
-            drawResults(results);
-          }
-        } catch (error) {
-          console.error("Error checking for equals sign:", error);
-        } finally {
-          setIsCalculating(false);
+        // Update variables if needed
+        if (result.variables) {
+          setVariables(result.variables);
         }
-      }, 1000); // Wait 1 second after drawing stops
-    },
-    [
-      lastCanvasData,
-      isCalculating,
-      variables,
-      analyzeMathExpression,
-      drawResults,
-    ]
-  );
+      }
+      setIsCalculating(false);
+    });
 
+    socketRef.current.on("calculation_error", (error) => {
+      console.error("Calculation error:", error);
+      setIsCalculating(false);
+    });
+
+    // Load variables for this note
+    if (noteId) {
+      axios
+        .get(`/api/notes/${noteId}/variables`, {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("token")}`,
+          },
+        })
+        .then((response) => {
+          if (response.data && response.data.variables) {
+            setVariables(response.data.variables);
+          }
+        })
+        .catch((error) =>
+          console.error("Failed to load note variables:", error)
+        );
+    }
+
+    return () => {
+      window.removeEventListener("resize", resizeCanvas);
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (analyzeTimeoutRef.current) clearTimeout(analyzeTimeoutRef.current);
+      if (sendCanvasDataTimeoutRef.current)
+        clearTimeout(sendCanvasDataTimeoutRef.current);
+      if (socketRef.current) socketRef.current.disconnect();
+    };
+  }, [initialData, noteId, drawResults]);
+
+  // Save clean canvas data
   const saveCleanCanvasData = () => {
     if (!canvasRef.current || !context) return "";
-
     const canvas = canvasRef.current;
-    // Use PNG for better quality when storing clean version
     const cleanData = canvas.toDataURL("image/png");
     setCleanCanvasData(cleanData);
     return cleanData;
   };
 
-  // Save canvas data when drawing stops - modified to include math detection
-  useEffect(() => {
-    if (!isDrawing && context) {
-      // Clear any existing timeout
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-
-      // Set a new timeout to save after drawing stops
-      saveTimeoutRef.current = setTimeout(() => {
-        const canvas = canvasRef.current;
-        if (canvas) {
-          // Save the clean version without answers
-          const cleanData = saveCleanCanvasData();
-
-          // Check for equations in the clean image
-          checkForEqualsSign(cleanData);
-        }
-      }, 600);
-    }
-
-    return () => {
-      if (saveTimeoutRef.current) {
-        clearTimeout(saveTimeoutRef.current);
-      }
-    };
-  }, [isDrawing, context]);
-
-  // Existing drawing functions
+  // Drawing functions
   const startDrawing = (e) => {
     if (!context) return;
 
@@ -327,7 +237,6 @@ const CanvasEditor = ({
     context.beginPath();
     context.moveTo(offsetX, offsetY);
 
-    // Set drawing styles based on current tool
     if (tool === "pen") {
       context.strokeStyle = color;
       context.lineWidth = thickness;
@@ -349,20 +258,42 @@ const CanvasEditor = ({
   };
 
   const stopDrawing = () => {
-    if (isDrawing && context) {
-      context.closePath();
-      setIsDrawing(false);
+    if (!isDrawing || !context) return;
+
+    context.closePath();
+    setIsDrawing(false);
+
+    // Save clean canvas data and trigger analysis
+    const cleanData = saveCleanCanvasData();
+
+    // Debounce sending to WebSocket
+    if (sendCanvasDataTimeoutRef.current) {
+      clearTimeout(sendCanvasDataTimeoutRef.current);
     }
+
+    sendCanvasDataTimeoutRef.current = setTimeout(() => {
+      if (socketRef.current && cleanData) {
+        // Send canvas data for analysis through WebSocket
+        socketRef.current.emit("canvas_data", {
+          canvasData: cleanData,
+          userId: localStorage.getItem("userId"),
+          noteId: noteId,
+          variables: variables,
+        });
+
+        // Also send via HTTP for more reliable processing
+        checkForMathExpression(cleanData);
+      }
+    }, 800);
   };
 
-  // Optimize touch handling for mobile
+  // Helper function to get coordinates from mouse or touch event
   const getCoordinates = (event) => {
     if (!canvasRef.current) return { offsetX: 0, offsetY: 0 };
 
     const rect = canvasRef.current.getBoundingClientRect();
 
     if (event.touches) {
-      // Prevent default to avoid scrolling while drawing on mobile
       event.preventDefault();
       return {
         offsetX: event.touches[0].clientX - rect.left,
@@ -376,10 +307,10 @@ const CanvasEditor = ({
     }
   };
 
-  // Use passive: false to prevent default behavior properly
+  // Prevent default on touch events
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || !context) return;
+    if (!canvas) return;
 
     const preventDefaultTouch = (e) => e.preventDefault();
 
@@ -394,9 +325,68 @@ const CanvasEditor = ({
       canvas.removeEventListener("touchstart", preventDefaultTouch);
       canvas.removeEventListener("touchmove", preventDefaultTouch);
     };
-  }, [context]);
+  }, []);
 
-  // Handle calculate button
+  // Function to check for math expressions in canvas
+  const checkForMathExpression = useCallback(
+    async (canvasData) => {
+      if (!canvasData || isCalculating) return;
+
+      // Only analyze if data has changed significantly
+      if (!hasEquationChanged(lastCanvasData, canvasData)) return;
+
+      setLastCanvasData(canvasData);
+
+      // Clear existing timeout
+      if (analyzeTimeoutRef.current) {
+        clearTimeout(analyzeTimeoutRef.current);
+      }
+
+      // Set a delay before analyzing to avoid too many API calls
+      analyzeTimeoutRef.current = setTimeout(async () => {
+        try {
+          setIsCalculating(true);
+
+          // Make API call to analyze math expression
+          const response = await axios.post(
+            "/api/analyze-math",
+            {
+              canvasData,
+              noteId,
+              variables,
+            },
+            {
+              headers: {
+                Authorization: `Bearer ${localStorage.getItem("token")}`,
+              },
+            }
+          );
+
+          // Process results
+          const { results, variables: newVariables } = response.data;
+
+          if (results && results.length > 0) {
+            setCalculationResults(results);
+
+            // Update variables if returned
+            if (newVariables) {
+              setVariables(newVariables);
+            }
+
+            // Draw results on canvas
+            drawResults(results);
+          }
+        } catch (error) {
+          console.error("Error analyzing math expression:", error);
+        } finally {
+          setIsCalculating(false);
+        }
+      }, 1000);
+    },
+    [lastCanvasData, isCalculating, variables, noteId, drawResults]
+  );
+
+  // Handle calculate button click
   const handleCalculate = useCallback(async () => {
     if (!canvasRef.current || isCalculating) return;
 
@@ -405,33 +395,18 @@ const CanvasEditor = ({
       const canvas = canvasRef.current;
       const canvasData = canvas.toDataURL("image/jpeg", 0.7);
 
-      const results = await analyzeMathExpression(canvasData, variables);
-      setCalculationResults(results);
+      // Save clean data
+      setCleanCanvasData(canvasData);
 
-      // Update variables if any assignments were made
-      const newVars = { ...variables };
-      let varsChanged = false;
-
-      results.forEach((result) => {
-        if (result.assign && result.expr && result.result !== undefined) {
-          newVars[result.expr] = result.result;
-          varsChanged = true;
-        }
-      });
-
-      if (varsChanged) {
-        setVariables(newVars);
-      }
-
-      // Draw the results on the canvas
-      drawResults(results);
+      // Send canvas data for analysis
+      checkForMathExpression(canvasData);
     } catch (error) {
       console.error("Error calculating result:", error);
-    } finally {
       setIsCalculating(false);
     }
-  }, [variables, isCalculating, drawResults, analyzeMathExpression]);
+  }, [isCalculating, checkForMathExpression]);
 
+  // Handle canvas reset
   const handleReset = () => {
     if (window.confirm("Are you sure you want to clear the canvas?")) {
       if (!context || !canvasRef.current) return;
@@ -442,8 +417,8 @@ const CanvasEditor = ({
 
       // Reset calculation state
       setLastCanvasData("");
+      setCleanCanvasData("");
       setCalculationResults([]);
-      setVariables({});
     }
   };
 
@@ -535,6 +510,23 @@ const CanvasEditor = ({
           onTouchMove={draw}
           onTouchEnd={stopDrawing}
         />
+
+        {/* Enhanced calculation results display */}
+        {calculationResults.length > 0 && !isCalculating && (
+          <div className="calculation-results">
+            {calculationResults.map((result, index) => (
+              <div key={index} className="calculation-result">
+                <span className="expression">{result.expr}</span>
+                <span className="equals">=</span>
+                <span className="result">{result.result}</span>
+                {result.assign && (
+                  <span className="assigned">Variable assigned</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         {isCalculating && (
           <div className="calculation-overlay">
             <div className="calculation-spinner"></div>

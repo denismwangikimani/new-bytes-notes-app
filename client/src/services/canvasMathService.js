@@ -87,15 +87,17 @@ IMPORTANT: Only calculate and return an answer if ONE of these is true:
 1. The image contains an equals sign (=)
 2. The image shows a vertical calculation with a horizontal line (like ___ or ——) underneath numbers
 
-For vertical calculations, look for these patterns:
+For vertical calculations, be very attentive to these specific patterns:
 - Numbers stacked with an operator (+, -, *, or /) either before or after the numbers
 - A horizontal line underneath (like ___ or ——)
-- Examples:
-  * "8 [newline] 8+ [newline] ___" means 8+8 and should return 16
-  * "8 [newline] *8 [newline] ___" means 8*8 and should return 64 
-  * "8 [newline] 8- [newline] ___" means 8-8 and should return 0
-  * "8 [newline] /2 [newline] ___" means 8/2 and should return 4
-  * The operator can appear before OR after a number
+- Examples of vertical calculations to recognize:
+  * "8" on one line, followed by "8+" on the next line, followed by "___" means 8+8 and should return 16
+  * "8" on one line, followed by "*8" on the next line, followed by "___" means 8*8 and should return 64 
+  * "8" on one line, followed by "8-" on the next line, followed by "___" means 8-8 and should return 0
+  * "8" on one line, followed by "/2" on the next line, followed by "___" means 8/2 and should return 4
+  * Also recognize if the numbers are aligned in a column for addition/subtraction
+
+Pay careful attention to the arrangement and alignment of numbers and operators.
 
 Return your answer in the format:
 [{"expr": "given expression", "result": calculated answer}]

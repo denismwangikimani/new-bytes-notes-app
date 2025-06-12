@@ -17,6 +17,8 @@ const path = require("path");
 const fs = require("fs");
 const axios = require("axios");
 const FormData = require("form-data");
+const { Server } = require("socket.io");
+const http = require("http");
 
 // Load environment variables from .env file
 require("dotenv").config();
@@ -62,6 +64,149 @@ app.use((req, res, next) => {
 // Increase the body size limit for JSON requests
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+// Create HTTP server (if not already done)
+const server = http.createServer(app);
+
+// Set up Socket.io with CORS configuration
+const io = new Server(server, {
+  cors: {
+    origin: [
+      "http://localhost:3000",
+      "https://new-bytes-notes-app.onrender.com",
+      "https://bytenotesapp.netlify.app",
+    ],
+    methods: ["GET", "POST"],
+  },
+});
+
+// Connect to MongoDB and then set up Change Streams
+// This is moved to AFTER io is initialized
+dbConnect()
+  .then(() => {
+    console.log("Connected to MongoDB");
+    setupChangeStreams(io); // Pass the io instance
+  })
+  .catch((err) => {
+    console.error("Failed to connect to MongoDB:", err);
+  });
+
+// This sets up change streams to watch for changes to the notes collection
+async function setupChangeStreams(socketIoInstance) {
+  // Accept io instance as a parameter
+  try {
+    console.log("Setting up Change Streams...");
+
+    // Use Mongoose Model's watch() method
+    const notesChangeStream = Note.watch([], {
+      fullDocument: "updateLookup", // Correct option for Mongoose
+    });
+
+    // Listen for 'change' events on the stream
+    notesChangeStream.on("change", (change) => {
+      if (
+        change.operationType === "insert" ||
+        change.operationType === "update"
+      ) {
+        const note = change.fullDocument;
+        if (note) {
+          socketIoInstance.emit("note_updated", {
+            // Use the passed io instance
+            noteId: note._id.toString(),
+            title: note.title,
+            content: note.content,
+            canvasData: note.canvasData,
+            updatedAt: note.updatedAt,
+          });
+        }
+      } else if (change.operationType === "delete") {
+        // Handle deletion events
+        const noteId = change.documentKey._id.toString();
+        socketIoInstance.emit("note_deleted", { noteId }); // Use the passed io instance
+      }
+    });
+
+    notesChangeStream.on("error", (error) => {
+      // Handle errors from the change stream itself
+      console.error("Change Stream error:", error);
+    });
+
+    console.log("Change Streams set up successfully");
+  } catch (error) {
+    // This catch block handles errors during the initial setup of the stream
+    console.error("Failed to set up Change Streams:", error);
+  }
+}
+
+// Socket.io connection handler
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
+
+  // Handle canvas data for real-time math detection
+  socket.on("canvas_data", async (data) => {
+    try {
+      const { canvasData, userId, noteId, variables } = data;
+
+      // Process the canvas data to detect math expressions
+      // We'll use your existing Gemini API integration
+      const response = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+        {
+          contents: [
+            {
+              parts: [
+                {
+                  text: `Does this image contain an equals sign (=) or a horizontal line (like ___ or ——) that indicates a calculation should be performed? If yes, what is the calculation and the answer? Answer in JSON format: { "containsCalculation": true/false, "calculation": "expression", "result": "answer" }`,
+                },
+                {
+                  inline_data: {
+                    mime_type: "image/jpeg",
+                    data: canvasData.split(",")[1] || canvasData,
+                  },
+                },
+              ],
+            },
+          ],
+          generation_config: { temperature: 0.1, max_output_tokens: 100 },
+        }
+      );
+
+      // Extract and parse the response
+      let calculationResult = { containsCalculation: false };
+      try {
+        const responseText = response.data.candidates[0].content.parts[0].text;
+        calculationResult = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("Error parsing Gemini response:", parseError);
+      }
+
+      // Send result back to the client
+      socket.emit("calculation_result", calculationResult);
+
+      // Save canvas data to database if it contains a calculation
+      if (calculationResult.containsCalculation && noteId) {
+        // Save to database using your existing Note model
+        await Note.findByIdAndUpdate(
+          noteId,
+          {
+            canvasData: canvasData,
+            lastCalculation: calculationResult,
+          },
+          { new: true }
+        );
+      }
+    } catch (error) {
+      console.error("Error processing canvas data:", error);
+      socket.emit("calculation_error", {
+        message: "Failed to process calculation",
+      });
+    }
+  });
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected:", socket.id);
+  });
+});
 
 //stripe connect
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
@@ -1187,4 +1332,136 @@ app.post("/api/text-to-speech", auth, async (req, res) => {
   }
 });
 
-module.exports = app;
+// Endpoint to analyze math expressions
+app.post("/api/analyze-math", auth, async (req, res) => {
+  try {
+    const { canvasData, noteId, variables = {} } = req.body;
+
+    if (!canvasData) {
+      return res.status(400).json({ message: "Canvas data is required" });
+    }
+
+    // Call the Gemini API for analysis
+    const response = await axios.post(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        contents: [
+          {
+            parts: [
+              {
+                text: `Analyze this image for mathematical expressions. 
+                Look for: 
+                1. Equations with equals sign (=)
+                2. Vertical calculations with numbers stacked and a line underneath (___ or ——)
+                
+                For vertical calculations like:
+                8
+                8+
+                ___
+                
+                Interpret as 8+8=16.
+                
+                Return results as JSON array: 
+                [{"expr": "expression", "result": value, "assign": boolean}]
+                
+                If variables are used, apply these values: ${JSON.stringify(
+                  variables
+                )}`,
+              },
+              {
+                inline_data: {
+                  mime_type: "image/jpeg",
+                  data: canvasData.split(",")[1] || canvasData,
+                },
+              },
+            ],
+          },
+        ],
+        generation_config: { temperature: 0.1, max_output_tokens: 256 },
+      }
+    );
+
+    // Parse response
+    const responseText = response.data.candidates[0].content.parts[0].text;
+    let results = [];
+
+    try {
+      // Try to extract JSON array from response
+      const match = responseText.match(/\[.*\]/s);
+      if (match) {
+        results = JSON.parse(match[0]);
+      }
+    } catch (parseError) {
+      console.error("Error parsing math results:", parseError);
+      return res.status(500).json({ message: "Error parsing math results" });
+    }
+
+    // Update note if noteId is provided
+    if (noteId) {
+      // Extract variables from results
+      const newVariables = { ...variables };
+      results.forEach((result) => {
+        if (result.assign && result.expr) {
+          newVariables[result.expr] = result.result;
+        }
+      });
+
+      await Note.findByIdAndUpdate(noteId, {
+        lastCalculation: { results, timestamp: new Date() },
+        variables: newVariables,
+      });
+    }
+
+    res.status(200).json({ results, variables: newVariables });
+  } catch (error) {
+    console.error("Error analyzing math expression:", error);
+    res.status(500).json({ message: "Error analyzing math expression" });
+  }
+});
+
+// Endpoint to get/update note variables
+app
+  .route("/api/notes/:id/variables")
+  .get(auth, async (req, res) => {
+    try {
+      const note = await Note.findOne({
+        _id: req.params.id,
+        user: req.user.userId,
+      });
+
+      if (!note) {
+        return res.status(404).json({ message: "Note not found" });
+      }
+
+      res.status(200).json({ variables: note.variables || {} });
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching variables" });
+    }
+  })
+  .put(auth, async (req, res) => {
+    try {
+      const { variables } = req.body;
+
+      if (!variables || typeof variables !== "object") {
+        return res.status(400).json({ message: "Invalid variables format" });
+      }
+
+      const note = await Note.findOneAndUpdate(
+        { _id: req.params.id, user: req.user.userId },
+        { variables },
+        { new: true }
+      );
+
+      if (!note) {
+        return res.status(404).json({ message: "Note not found" });
+      }
+
+      res
+        .status(200)
+        .json({ message: "Variables updated", variables: note.variables });
+    } catch (error) {
+      res.status(500).json({ message: "Error updating variables" });
+    }
+  });
+
+module.exports = { app, server };

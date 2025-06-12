@@ -35,6 +35,19 @@ const noteSchema = new mongoose.Schema(
       ref: "Group",
       default: null,
     },
+    canvasData: {
+      type: String,
+      required: false,
+    },
+    lastCalculation: {
+      type: mongoose.Schema.Types.Mixed,
+      required: false,
+    },
+    variables: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+      required: false,
+    },
   },
   {
     timestamps: true,

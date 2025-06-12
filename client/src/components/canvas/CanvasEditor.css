@@ -151,6 +151,56 @@ canvas {
   margin-bottom: 10px;
 }
 
+.calculation-results {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  right: 10px;
+  background-color: rgba(255, 255, 255, 0.85);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.calculation-result {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 18px;
+  font-family: "Courier New", monospace;
+}
+
+.calculation-result:last-child {
+  margin-bottom: 0;
+}
+
+.calculation-result .expression {
+  color: #333;
+  margin-right: 8px;
+}
+
+.calculation-result .equals {
+  margin: 0 8px;
+  color: #666;
+}
+
+.calculation-result .result {
+  font-weight: bold;
+  color: #4f46e5;
+}
+
+.calculation-result .assigned {
+  margin-left: 12px;
+  background-color: #4f46e5;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
 /* Add this class that will be applied when showing answers */
 .canvas-container.with-answers {
   position: relative;
