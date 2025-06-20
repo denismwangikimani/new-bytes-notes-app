@@ -16,10 +16,12 @@ const NotesContent = () => {
   const [lastQuery, setLastQuery] = useState({ type: "all", params: null });
   const { isSidebarOpen, toggleSidebar } = useSidebar();
   const [groups, setGroups] = useState([]);
-  
+
   const navigate = useNavigate();
 
-  const API_BASE_URL = "https://new-bytes-notes-backend.onrender.com";
+  const API_BASE_URL =
+    process.env.REACT_APP_API_URL ||
+    "https://new-bytes-notes-backend.onrender.com";
   //const token = localStorage.getItem("token");
 
   // Create a function to get a fresh API instance with the current token

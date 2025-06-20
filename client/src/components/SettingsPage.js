@@ -4,7 +4,7 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import "./SettingsPage.css"; 
 
-const API_BASE_URL = "https://new-bytes-notes-backend.onrender.com";
+const API_BASE_URL = process.env.REACT_APP_API_URL || "https://new-bytes-notes-backend.onrender.com";
 
 function SettingsPage() {
   const [userData, setUserData] = useState({ username: "", email: "" });

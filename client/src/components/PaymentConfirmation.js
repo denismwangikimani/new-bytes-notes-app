@@ -10,6 +10,8 @@ function PaymentConfirmation() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const API_BASE_URL = process.env.REACT_APP_API_URL || "https://new-bytes-notes-backend.onrender.com";
+
   useEffect(() => {
     const queryParams = new URLSearchParams(location.search);
     const paymentIntentId = queryParams.get("payment_intent");
@@ -52,7 +54,7 @@ function PaymentConfirmation() {
         return;
       }
 
-      axios.post("https://new-bytes-notes-backend.onrender.com/complete-payment", registrationData)
+      axios.post(`${API_BASE_URL}/complete-payment`, registrationData)
         .then((response) => {
           localStorage.setItem("token", response.data.token);
           setStatus("success");
@@ -83,7 +85,7 @@ function PaymentConfirmation() {
       setStatus("error");
       setMessage(`Payment ${redirectStatus}. Please try again or contact support.`);
     }
-  }, [navigate, location.search]);
+  }, [navigate, location.search, API_BASE_URL]);
 
   return (
     <div className="payment-confirmation-container">

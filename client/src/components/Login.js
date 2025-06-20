@@ -10,12 +10,14 @@ function Login() {
   const [error, setError] = useState(null);
   const navigate = useNavigate();
 
+  const API_BASE_URL = process.env.REACT_APP_API_URL || "https://new-bytes-notes-backend.onrender.com";
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError(null); // Clear previous errors
     try {
       const response = await axios.post(
-        "https://new-bytes-notes-backend.onrender.com/login",
+        `${API_BASE_URL}/login`,
         {
           email,
           password,
@@ -41,7 +43,7 @@ function Login() {
 
     try {
       const response = await axios.post(
-        "https://new-bytes-notes-backend.onrender.com/auth/google",
+        `${API_BASE_URL}/auth/google`,
         { tokenId }
       );
       console.log("Backend Google login response:", response.data);

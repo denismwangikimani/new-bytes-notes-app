@@ -39,7 +39,7 @@ function Signup() {
   const [stripeInstance, setStripeInstance] = useState(null);
 
   // API Base URL - centralized for easy switching between environments
-  const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "https://new-bytes-notes-backend.onrender.com";
+  const API_BASE_URL = process.env.REACT_APP_API_URL || "https://new-bytes-notes-backend.onrender.com";
 
   const handleNextStep = async (e) => {
     // For Email/Password signup
