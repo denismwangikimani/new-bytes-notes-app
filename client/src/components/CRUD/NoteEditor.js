@@ -27,6 +27,7 @@ import EditorToolbar from "../EditorToolbar";
 import { generateContent, transformText } from "../../services/geminiService";
 import FlashcardModal from "../FlashcardModal";
 import FileSidebar from "./FileSidebar";
+import Canvas from "../canvas/Canvas";
 import "./notes.css";
 
 // Slate imports
@@ -607,6 +608,9 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     const e = withMedia(withHistory(withReact(createEditor())));
     return e;
   }, [note?._id]); // Recreate editor when note ID changes (this is fine for major context switch)
+
+  //canvas state
+  const [canvasMode, setCanvasMode] = useState(false);
 
   // Initial value derived from note content using deserialization
   const initialValue = useMemo(() => {
@@ -1381,7 +1385,12 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     <div className={`editor-container ${!isSidebarOpen ? "full-width" : ""}`}>
       <EditorHeader onCreate={onCreate} />
       <div className="editor-content-wrapper">
-        <EditorToolbar editor={editor} onFormatText={handleFormatText} />
+        <EditorToolbar
+          editor={editor}
+          onFormatText={handleFormatText}
+          onToggleCanvas={() => setCanvasMode((v) => !v)}
+          canvasMode={canvasMode}
+        />
         <input
           type="text"
           value={title}
@@ -1389,26 +1398,36 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           className="editor-title"
           placeholder="Note title..."
         />
-        <Slate
-          editor={editor}
-          initialValue={initialValue} // Use initialValue for initial setup
-          value={slateValue} // Controlled component with slateValue
-          onChange={handleSlateChange}
-          // FIX 1: Correct the key to prevent re-initialization on every render
-          key={note?._id || "new-note"}
-        >
-          <Editable
-            className="editor-content rich-editor"
-            renderElement={renderElement}
-            renderLeaf={renderLeaf}
-            placeholder="Start typing your note..."
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            data-gramm="false" // Consider data-gramm_editor="false" if Grammarly is an issue
-            onKeyDown={handleKeyDown}
+        {canvasMode ? (
+          <Canvas
+            value={note.canvasImage}
+            onChange={(img) =>
+              onUpdate(note._id, { ...note, canvasImage: img })
+            }
+            noteId={note._id}
           />
-        </Slate>
+        ) : (
+          <Slate
+            editor={editor}
+            initialValue={initialValue} // Use initialValue for initial setup
+            value={slateValue} // Controlled component with slateValue
+            onChange={handleSlateChange}
+            // FIX 1: Correct the key to prevent re-initialization on every render
+            key={note?._id || "new-note"}
+          >
+            <Editable
+              className="editor-content rich-editor"
+              renderElement={renderElement}
+              renderLeaf={renderLeaf}
+              placeholder="Start typing your note..."
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              data-gramm="false" // Consider data-gramm_editor="false" if Grammarly is an issue
+              onKeyDown={handleKeyDown}
+            />
+          </Slate>
+        )}
       </div>
       <AIAssistant
         onActivateText={handleActivateText}

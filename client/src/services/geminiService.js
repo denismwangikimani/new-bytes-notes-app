@@ -213,7 +213,7 @@ const processDocumentWithFilesAPI = async (fileUrl, prompt) => {
       }
 
       const result = await genAI.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-2.5-flash",
         contents: content,
         generationConfig: {
           temperature: 0.4,
@@ -541,7 +541,7 @@ export const generateContent = async (prompt) => {
   try {
     // Updated API method
     const result = await genAI.models.generateContent({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
     });
 

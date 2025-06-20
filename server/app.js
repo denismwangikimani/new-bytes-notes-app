@@ -17,6 +17,9 @@ const path = require("path");
 const fs = require("fs");
 const axios = require("axios");
 const FormData = require("form-data");
+const router = express.Router();
+const { GoogleGenAI } = require("@google/genai");
+const { JWT_SECRET, GEMINI_API_KEY } = process.env;
 
 // Load environment variables from .env file
 require("dotenv").config();
@@ -79,36 +82,47 @@ app.post("/initiate-email-signup", async (req, res) => {
   const { email, username, password: tempPassword } = req.body; // Client sends password, but we don't save it yet
 
   if (!email || !username || !tempPassword) {
-    return res.status(400).json({ message: "Email, username, and password are required." });
+    return res
+      .status(400)
+      .json({ message: "Email, username, and password are required." });
   }
   if (tempPassword.length < 6) {
-    return res.status(400).json({ message: "Password must be at least 6 characters long." });
+    return res
+      .status(400)
+      .json({ message: "Password must be at least 6 characters long." });
   }
 
   try {
     let user = await User.findOne({ email });
     if (user && user.isPaid) {
-      return res.status(400).json({ message: "Email already registered and paid." });
+      return res
+        .status(400)
+        .json({ message: "Email already registered and paid." });
     }
     // If user exists but is not paid, we can allow them to retry payment with new details,
     // or overwrite. For simplicity, let's assume a new attempt might mean new temp user or update existing.
     // For now, let's prevent duplicate unpaid accounts with the same email.
     if (user && !user.isPaid) {
-        // Optionally, delete the old unpaid user or update them.
-        // For this example, we'll just use the existing unpaid user.
-        // Or, to ensure clean state for this flow:
-        // await User.deleteOne({ email, isPaid: false }); 
-        // For now, let's prevent creating a new one if an unpaid one exists.
-         return res.status(400).json({ message: "An unpaid account with this email already exists. Try logging in or contacting support." });
+      // Optionally, delete the old unpaid user or update them.
+      // For this example, we'll just use the existing unpaid user.
+      // Or, to ensure clean state for this flow:
+      // await User.deleteOne({ email, isPaid: false });
+      // For now, let's prevent creating a new one if an unpaid one exists.
+      return res.status(400).json({
+        message:
+          "An unpaid account with this email already exists. Try logging in or contacting support.",
+      });
     }
-    
+
     const existingUsername = await User.findOne({ username });
     if (existingUsername && existingUsername.isPaid) {
-        return res.status(400).json({ message: "Username already taken." });
+      return res.status(400).json({ message: "Username already taken." });
     }
     if (existingUsername && !existingUsername.isPaid) {
-        // Similar to email, handle existing unpaid username
-        return res.status(400).json({ message: "An unpaid account with this username already exists." });
+      // Similar to email, handle existing unpaid username
+      return res.status(400).json({
+        message: "An unpaid account with this username already exists.",
+      });
     }
 
     // Create a preliminary user record (password is not hashed or stored yet)
@@ -127,10 +141,11 @@ app.post("/initiate-email-signup", async (req, res) => {
     });
   } catch (error) {
     console.error("Error initiating email signup:", error);
-    res.status(500).json({ message: "Error initiating signup", error: error.toString() });
+    res
+      .status(500)
+      .json({ message: "Error initiating signup", error: error.toString() });
   }
 });
-
 
 // MODIFIED: /auth/google to become /google/initiate-signup
 app.post("/google/initiate-signup", async (req, res) => {
@@ -156,16 +171,23 @@ app.post("/google/initiate-signup", async (req, res) => {
         process.env.JWT_SECRET || "secret",
         { expiresIn: "24h" }
       );
-      return res.status(200).json({ message: "Google login successful!", token });
+      return res
+        .status(200)
+        .json({ message: "Google login successful!", token });
     }
 
-    if (!user) { // No user with this googleId, check by email
+    if (!user) {
+      // No user with this googleId, check by email
       user = await User.findOne({ email });
-      if (user) { // User exists with this email
+      if (user) {
+        // User exists with this email
         if (user.isPaid) {
           // Email is registered and paid, but not linked to this Google ID.
           // This could be a conflict. For now, error.
-          return res.status(400).json({ message: "This email is already registered. Please log in with your password or existing Google account." });
+          return res.status(400).json({
+            message:
+              "This email is already registered. Please log in with your password or existing Google account.",
+          });
         } else {
           // User exists with this email but is unpaid. Link Google ID.
           user.googleId = googleId;
@@ -174,15 +196,23 @@ app.post("/google/initiate-signup", async (req, res) => {
           }
           // Ensure username uniqueness if updated
           if (user.isModified("username") || user.isModified("googleId")) {
-             const existingUsernameCheck = await User.findOne({ username: user.username, _id: { $ne: user._id } });
-             if (existingUsernameCheck) user.username = `${user.username}_${Date.now().toString().slice(-4)}`;
-             await user.save();
+            const existingUsernameCheck = await User.findOne({
+              username: user.username,
+              _id: { $ne: user._id },
+            });
+            if (existingUsernameCheck)
+              user.username = `${user.username}_${Date.now()
+                .toString()
+                .slice(-4)}`;
+            await user.save();
           }
         }
       } else {
         // New user via Google
         let newUsername = name || given_name || email.split("@")[0];
-        const existingUsernameCheck = await User.findOne({ username: newUsername });
+        const existingUsernameCheck = await User.findOne({
+          username: newUsername,
+        });
         if (existingUsernameCheck) {
           newUsername = `${newUsername}_${Date.now().toString().slice(-4)}`;
         }
@@ -204,26 +234,31 @@ app.post("/google/initiate-signup", async (req, res) => {
       username: user.username,
       isPaid: false,
     });
-
   } catch (error) {
     console.error("Google initiate signup error:", error);
-    res.status(500).json({ message: "Google authentication failed.", error: error.toString() });
+    res.status(500).json({
+      message: "Google authentication failed.",
+      error: error.toString(),
+    });
   }
 });
-
 
 // NEW: Step 2 (All signups): Create Payment Session (replaces /create-payment-intent)
 app.post("/create-payment-session", async (req, res) => {
   const { tempUserId, email } = req.body; // email is for Stripe customer
 
   if (!tempUserId || !email) {
-    return res.status(400).json({ message: "Temporary User ID and email are required." });
+    return res
+      .status(400)
+      .json({ message: "Temporary User ID and email are required." });
   }
 
   try {
     const user = await User.findById(tempUserId);
     if (!user || user.isPaid) {
-      return res.status(404).json({ message: "Valid unpaid user not found or already paid." });
+      return res
+        .status(404)
+        .json({ message: "Valid unpaid user not found or already paid." });
     }
 
     let stripeCustomerId = user.stripeCustomerId;
@@ -238,7 +273,6 @@ app.post("/create-payment-session", async (req, res) => {
       user.stripeCustomerId = stripeCustomerId; // Save it for later
       await user.save();
     }
-
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: 1800, // $18.00 in cents
@@ -256,25 +290,40 @@ app.post("/create-payment-session", async (req, res) => {
     });
   } catch (error) {
     console.error("Error creating payment session:", error);
-    res.status(500).json({ message: "Error processing payment", error: error.message });
+    res
+      .status(500)
+      .json({ message: "Error processing payment", error: error.message });
   }
 });
 
 // NEW: Step 3 (All signups): Complete Payment and Finalize Registration
 // (replaces /register/complete and /auth/google/complete-payment)
 app.post("/complete-payment", async (req, res) => {
-  const { paymentIntentId, signupMethod, email, username, password, tempUserId: tempUserIdFromGoogleFlow } = req.body;
+  const {
+    paymentIntentId,
+    signupMethod,
+    email,
+    username,
+    password,
+    tempUserId: tempUserIdFromGoogleFlow,
+  } = req.body;
 
   if (!paymentIntentId || !signupMethod) {
-    return res.status(400).json({ message: "Payment Intent ID and signup method are required." });
+    return res
+      .status(400)
+      .json({ message: "Payment Intent ID and signup method are required." });
   }
-  if (signupMethod === 'email' && (!email || !username || !password)) {
-    return res.status(400).json({ message: "Email, username, and password are required for email signup completion." });
+  if (signupMethod === "email" && (!email || !username || !password)) {
+    return res.status(400).json({
+      message:
+        "Email, username, and password are required for email signup completion.",
+    });
   }
-  if (signupMethod === 'google' && !tempUserIdFromGoogleFlow) {
-     return res.status(400).json({ message: "Temporary User ID is required for Google signup completion." });
+  if (signupMethod === "google" && !tempUserIdFromGoogleFlow) {
+    return res.status(400).json({
+      message: "Temporary User ID is required for Google signup completion.",
+    });
   }
-
 
   try {
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
@@ -283,41 +332,62 @@ app.post("/complete-payment", async (req, res) => {
       return res.status(400).json({ message: "Payment not successful." });
     }
     if (paymentIntent.amount !== 1800) {
-        return res.status(400).json({ message: "Payment amount incorrect." });
+      return res.status(400).json({ message: "Payment amount incorrect." });
     }
 
     const userIdFromPaymentMeta = paymentIntent.metadata.userId;
     if (!userIdFromPaymentMeta) {
-        return res.status(400).json({ message: "User ID missing from payment metadata." });
+      return res
+        .status(400)
+        .json({ message: "User ID missing from payment metadata." });
     }
-    
+
     // For Google flow, ensure the tempUserId from client matches payment metadata
-    if (signupMethod === 'google' && tempUserIdFromGoogleFlow !== userIdFromPaymentMeta) {
-        console.error("Mismatch in tempUserId for Google flow:", tempUserIdFromGoogleFlow, userIdFromPaymentMeta);
-        return res.status(400).json({ message: "User ID mismatch during Google payment completion." });
+    if (
+      signupMethod === "google" &&
+      tempUserIdFromGoogleFlow !== userIdFromPaymentMeta
+    ) {
+      console.error(
+        "Mismatch in tempUserId for Google flow:",
+        tempUserIdFromGoogleFlow,
+        userIdFromPaymentMeta
+      );
+      return res.status(400).json({
+        message: "User ID mismatch during Google payment completion.",
+      });
     }
 
     const user = await User.findById(userIdFromPaymentMeta);
     if (!user) {
-      return res.status(404).json({ message: "User not found for payment completion." });
+      return res
+        .status(404)
+        .json({ message: "User not found for payment completion." });
     }
     if (user.isPaid) {
       // Should ideally not happen if logic is correct, but good to check.
       // If already paid, just generate token.
-       const token = jwt.sign(
+      const token = jwt.sign(
         { userId: user._id.toString(), email: user.email, isPaid: user.isPaid },
         process.env.JWT_SECRET || "secret",
         { expiresIn: "24h" }
       );
-      return res.status(200).json({ message: "Account already active.", token });
+      return res
+        .status(200)
+        .json({ message: "Account already active.", token });
     }
 
     // Finalize user based on signup method
-    if (signupMethod === 'email') {
+    if (signupMethod === "email") {
       // Ensure the email and username from client match the preliminary user record
       if (user.email !== email || user.username !== username) {
-          console.error("Data mismatch for email user:", {dbEmail: user.email, clientEmail: email}, {dbUser: user.username, clientUser: username} );
-          return res.status(400).json({ message: "User data mismatch during email payment completion." });
+        console.error(
+          "Data mismatch for email user:",
+          { dbEmail: user.email, clientEmail: email },
+          { dbUser: user.username, clientUser: username }
+        );
+        return res.status(400).json({
+          message: "User data mismatch during email payment completion.",
+        });
       }
       user.password = await bcrypt.hash(password, 10);
     }
@@ -342,17 +412,20 @@ app.post("/complete-payment", async (req, res) => {
     });
   } catch (error) {
     console.error("Error completing payment:", error);
-    res.status(500).json({ message: "Error completing payment", error: error.toString() });
+    res
+      .status(500)
+      .json({ message: "Error completing payment", error: error.toString() });
   }
 });
-
 
 // Login endpoint (remains largely the same, but ensure it checks isPaid)
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
-    return res.status(400).json({ message: "Email and Password are required!" });
+    return res
+      .status(400)
+      .json({ message: "Email and Password are required!" });
   }
 
   try {
@@ -363,14 +436,19 @@ app.post("/login", async (req, res) => {
 
     // For users who might have initiated signup but not paid (e.g. email signup)
     // they won't have a password set yet.
-    if (!user.password && !user.googleId) { // No password and not a Google user
-        return res.status(401).json({ message: "Account setup incomplete. Please complete payment or signup again." });
+    if (!user.password && !user.googleId) {
+      // No password and not a Google user
+      return res.status(401).json({
+        message:
+          "Account setup incomplete. Please complete payment or signup again.",
+      });
     }
     // If it's a Google user trying to log in with email/password, and they never set one
     if (user.googleId && !user.password) {
-        return res.status(401).json({ message: "Please log in using your Google account." });
+      return res
+        .status(401)
+        .json({ message: "Please log in using your Google account." });
     }
-
 
     const isPasswordMatching = await bcrypt.compare(password, user.password);
     if (!isPasswordMatching) {
@@ -378,9 +456,14 @@ app.post("/login", async (req, res) => {
     }
 
     if (!user.isPaid) {
-        // This case should ideally be handled by the signup flow redirecting to payment.
-        // But if they try to log in directly:
-        return res.status(403).json({ message: "Account not activated. Payment required.", paymentRequired: true, tempUserId: user._id.toString(), email: user.email });
+      // This case should ideally be handled by the signup flow redirecting to payment.
+      // But if they try to log in directly:
+      return res.status(403).json({
+        message: "Account not activated. Payment required.",
+        paymentRequired: true,
+        tempUserId: user._id.toString(),
+        email: user.email,
+      });
     }
 
     const token = jwt.sign(
@@ -391,7 +474,9 @@ app.post("/login", async (req, res) => {
     res.status(200).json({ message: "Login successful!", token: token });
   } catch (error) {
     console.error("Login error:", error);
-    res.status(500).json({ message: "Error logging in user", error: error.toString() });
+    res
+      .status(500)
+      .json({ message: "Error logging in user", error: error.toString() });
   }
 });
 
@@ -1095,6 +1180,84 @@ app.post("/api/text-to-speech", auth, async (req, res) => {
   } catch (error) {
     console.error("Error generating speech:", error);
     res.status(500).json({ message: "Error generating speech", error });
+  }
+});
+
+app.post("/canvas-calculate", async (req, res) => {
+  const { image, noteId, dict_of_vars = {} } = req.body;
+  try {
+    const genAI = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+    });
+
+    // Build the prompt exactly as in your Python code
+    const dict_of_vars_str = JSON.stringify(dict_of_vars);
+    const prompt = [
+      {
+        text:
+          "You have been given an image with some mathematical expressions, equations, or graphical problems, and you need to solve them. " +
+          "Note: Use the PEMDAS rule for solving mathematical expressions. PEMDAS stands for the Priority Order: Parentheses, Exponents, Multiplication and Division (from left to right), Addition and Subtraction (from left to right). Parentheses have the highest priority, followed by Exponents, then Multiplication and Division, and lastly Addition and Subtraction. " +
+          "For example: " +
+          "Q. 2 + 3 * 4 " +
+          "(3 * 4) => 12, 2 + 12 = 14. " +
+          "Q. 2 + 3 + 5 * 4 - 8 / 2 " +
+          "5 * 4 => 20, 8 / 2 => 4, 2 + 3 => 5, 5 + 20 => 25, 25 - 4 => 21. " +
+          "YOU CAN HAVE FIVE TYPES OF EQUATIONS/EXPRESSIONS IN THIS IMAGE, AND ONLY ONE CASE SHALL APPLY EVERY TIME: " +
+          "Following are the cases: " +
+          "1. Simple mathematical expressions like 2 + 2, 3 * 4, 5 / 6, 7 - 8, etc.: In this case, solve and return the answer in the format of a LIST OF ONE DICT [{'expr': given expression, 'result': calculated answer}]. " +
+          "2. Set of Equations like x^2 + 2x + 1 = 0, 3y + 4x = 0, 5x^2 + 6y + 7 = 12, etc.: In this case, solve for the given variable, and the format should be a COMMA SEPARATED LIST OF DICTS, with dict 1 as {'expr': 'x', 'result': 2, 'assign': True} and dict 2 as {'expr': 'y', 'result': 5, 'assign': True}. This example assumes x was calculated as 2, and y as 5. Include as many dicts as there are variables. " +
+          "3. Assigning values to variables like x = 4, y = 5, z = 6, etc.: In this case, assign values to variables and return another key in the dict called {'assign': True}, keeping the variable as 'expr' and the value as 'result' in the original dictionary. RETURN AS A LIST OF DICTS. " +
+          "4. Analyzing Graphical Math problems, which are word problems represented in drawing form, such as cars colliding, trigonometric problems, problems on the Pythagorean theorem, adding runs from a cricket wagon wheel, etc. These will have a drawing representing some scenario and accompanying information with the image. PAY CLOSE ATTENTION TO DIFFERENT COLORS FOR THESE PROBLEMS. You need to return the answer in the format of a LIST OF ONE DICT [{'expr': given expression, 'result': calculated answer}]. " +
+          "5. Detecting Abstract Concepts that a drawing might show, such as love, hate, jealousy, patriotism, or a historic reference to war, invention, discovery, quote, etc. USE THE SAME FORMAT AS OTHERS TO RETURN THE ANSWER, where 'expr' will be the explanation of the drawing, and 'result' will be the abstract concept. " +
+          "IMPORTANT: If there are multiple equations or expressions, return each as a separate dictionary in the list. Do not combine them into a single expression. Leave enough vertical space between equations for best recognition." +
+          "Analyze the equation or expression in this image and return the answer according to the given rules: " +
+          "Make sure to use extra backslashes for escape characters like \\f -> \\\\f, \\n -> \\\\n, etc. " +
+          `Here is a dictionary of user-assigned variables. If the given expression has any of these variables, use its actual value from this dictionary accordingly: ${dict_of_vars_str}. ` +
+          "DO NOT USE BACKTICKS OR MARKDOWN FORMATTING. " +
+          "PROPERLY QUOTE THE KEYS AND VALUES IN THE DICTIONARY FOR EASIER PARSING WITH Python's ast.literal_eval.",
+      },
+    ];
+
+    // Remove the data:image/png;base64, prefix if present
+    const base64Data = image.replace(/^data:image\/\w+;base64,/, "");
+
+    // Compose the Gemini contents array
+    const contents = [
+      ...prompt,
+      {
+        inlineData: {
+          mimeType: "image/png",
+          data: base64Data,
+        },
+      },
+    ];
+
+    // Call Gemini API
+    const result = await genAI.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: contents,
+      generationConfig: {
+        temperature: 0.4,
+        maxOutputTokens: 2048,
+      },
+    });
+
+    // Extract the text from the response
+    let responseText = "";
+    if (result.response && typeof result.response.text === "function") {
+      responseText = await result.response.text();
+    } else if (result.candidates && result.candidates[0]?.content?.parts) {
+      responseText = result.candidates[0].content.parts[0].text || "";
+    } else {
+      responseText = JSON.stringify(result);
+    }
+
+    // Optionally: Try to parse as JSON or Python dict if you want to process it further
+    // For now, just return the raw text
+    res.json({ result: responseText });
+  } catch (err) {
+    console.error("Gemini error:", err);
+    res.status(500).json({ message: err.message });
   }
 });
 

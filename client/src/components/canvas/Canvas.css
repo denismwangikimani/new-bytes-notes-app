@@ -1,0 +1,35 @@
+.canvas-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 1rem 0;
+}
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+.canvas-colors {
+  display: flex;
+  gap: 0.25rem;
+}
+.canvas-color {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+}
+.canvas-board {
+  border: 1px solid #ccc;
+  background: #222;
+  cursor: crosshair;
+}
+.canvas-result {
+  margin-top: 1rem;
+  background: #f8f8f8;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  min-width: 300px;
+}

@@ -32,6 +32,8 @@ const EditorToolbar = ({
   editor,
   savedStatus,
   onInsertMedia,
+  canvasMode = false, // Add default value if not provided
+  onToggleCanvas = () => {}, // Add default no-op function if not provided
 }) => {
   const [showAllTools, setShowAllTools] = useState(false);
   const [showFontFamilyMenu, setShowFontFamilyMenu] = useState(false);
@@ -177,6 +179,17 @@ const EditorToolbar = ({
   const primaryTools = (
     <>
       {/* Bold, Italic, Underline buttons */}
+      <button
+        className={`toolbar-button ${canvasMode ? "active" : ""}`}
+        onClick={onToggleCanvas}
+        title="Switch to Canvas Mode"
+      >
+        {/* Use a drawing/pen icon here */}
+        <svg width="18" height="18" fill="none" stroke="currentColor">
+          <path d="M2 16.5V21h4.5l13-13.1-4.5-4.5L2 16.5z"></path>
+        </svg>
+      </button>
+
       <button
         className="toolbar-button"
         onClick={() => handleFormat("bold")}
