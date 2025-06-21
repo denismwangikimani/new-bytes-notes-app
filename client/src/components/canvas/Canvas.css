@@ -1,14 +1,33 @@
 .canvas-container {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin: 1rem 0;
+  width: 100%;
+  max-width: 100%;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04);
+  padding: 0;
+  margin: 0;
 }
-.canvas-toolbar {
+.canvas-toolbar-outer {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  background: #fff;
+  border-radius: 8px 8px 0 0;
+  border-bottom: 1px solid #eee;
+  padding: 0.5rem 0;
+  position: relative;
+  gap: 0.5rem;
+}
+
+.canvas-toolbar-scroll {
   display: flex;
   align-items: center;
   gap: 1rem;
-  margin-bottom: 0.5rem;
+  overflow-x: auto;
+  flex: 1 1 auto;
+  scrollbar-width: thin;
+  scrollbar-color: #ccc #fff;
+  padding: 0 0.5rem;
 }
 .canvas-colors {
   display: flex;
@@ -22,14 +41,83 @@
   cursor: pointer;
 }
 .canvas-board {
-  border: 1px solid #ccc;
-  background: #222;
-  cursor: crosshair;
+  width: 100%;
+  max-width: 100%;
+  min-height: 300px;
+  height: 40vw;
+  max-height: 60vh;
+  border-radius: 0 0 8px 8px;
+  background: #fff;
+  display: block;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 .canvas-result {
   margin-top: 1rem;
-  background: #f8f8f8;
+  background: #fff;
   padding: 0.5rem 1rem;
   border-radius: 4px;
   min-width: 300px;
+  color: #222;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+}
+
+.canvas-result-sticky {
+  /* See inline styles above for main properties */
+  scrollbar-width: thin;
+  scrollbar-color: #fff #222;
+}
+.canvas-result-sticky pre {
+  font-family: inherit;
+  font-size: 1rem;
+  color: #fff;
+}
+.sticky-btn {
+  flex: 0 0 auto;
+  background: #18181b;
+  color: #fff;
+  border: 2px solid #fff;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  margin: 0 0.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  z-index: 2;
+  min-width: 110px;
+}
+@media (max-width: 900px) {
+  .canvas-toolbar-outer {
+    flex-direction: row;
+    padding: 0.25rem 0;
+  }
+  .canvas-toolbar-scroll {
+    gap: 0.5rem;
+    padding: 0 0.25rem;
+  }
+  .sticky-btn {
+    font-size: 0.95rem;
+    padding: 0.4rem 0.7rem;
+    min-width: 90px;
+  }
+}
+
+@media (max-width: 600px) {
+  .canvas-toolbar-outer {
+    flex-direction: row;
+    padding: 0.15rem 0;
+  }
+  .canvas-toolbar-scroll {
+    gap: 0.3rem;
+    padding: 0 0.1rem;
+  }
+  .sticky-btn {
+    font-size: 0.9rem;
+    padding: 0.3rem 0.5rem;
+    min-width: 80px;
+  }
+  .canvas-board {
+    min-height: 180px;
+    height: 40vw;
+    max-height: 40vh;
+  }
 }

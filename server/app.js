@@ -881,7 +881,7 @@ app.post("/notes", auth, async (req, res) => {
 
 //update a note by id
 app.put("/notes/:id", auth, async (req, res) => {
-  const { title, content } = req.body;
+  const { title, content, canvasImage } = req.body;
 
   // Validate request data
   try {
@@ -890,7 +890,7 @@ app.put("/notes/:id", auth, async (req, res) => {
     // Find the note by id and update it
     const note = await Note.findOneAndUpdate(
       { _id: req.params.id, user: userId },
-      { title, content },
+      { title, content, canvasImage },
       { new: true }
     );
     // Respond with success message if note is updated successfully

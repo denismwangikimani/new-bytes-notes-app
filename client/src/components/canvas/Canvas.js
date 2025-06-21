@@ -23,6 +23,7 @@ const Canvas = ({
   width = 600,
   height = 400,
   noteId,
+  onSwitchToNotes,
 }) => {
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -34,28 +35,52 @@ const Canvas = ({
   const [redoStack, setRedoStack] = useState([]);
   const [shape, setShape] = useState("pen"); // "free", "rect", "circle", "triangle", etc.
   const [startPoint, setStartPoint] = useState(null);
+  const [showResult, setShowResult] = useState(true);
+  const lastLoadedValue = useRef(null);
+  const saveTimeout = useRef(null);
 
   // Load saved canvas image for this note
   useEffect(() => {
-    if (value && canvasRef.current) {
+    // Only reload if value is different from last loaded
+    if (
+      !isDrawing &&
+      value &&
+      value !== lastLoadedValue.current &&
+      canvasRef.current
+    ) {
       const ctx = canvasRef.current.getContext("2d");
       const img = new window.Image();
       img.onload = () => {
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
+        lastLoadedValue.current = value;
       };
       img.src = value;
-    } else if (canvasRef.current) {
+    } else if (!isDrawing && !value && canvasRef.current) {
       const ctx = canvasRef.current.getContext("2d");
       ctx.clearRect(0, 0, width, height);
+      lastLoadedValue.current = null;
     }
-  }, [value, width, height]);
+    // eslint-disable-next-line
+  }, [value, width, height, isDrawing]);
 
-  // Save canvas image to parent on every draw
+  const debouncedSaveCanvas = () => {
+    if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    saveTimeout.current = setTimeout(() => {
+      if (canvasRef.current) {
+        const dataUrl = canvasRef.current.toDataURL("image/png");
+        onChange && onChange(dataUrl);
+      }
+    }, 500); // 500ms after last draw
+  };
+
+  // Save canvas image to parent only on mouse up (after drawing)
   const saveCanvas = () => {
     if (canvasRef.current) {
       const dataUrl = canvasRef.current.toDataURL("image/png");
-      onChange && onChange(dataUrl);
+      // Don't call onChange here during every draw!
+      // We'll call it only after drawing is done.
+      return dataUrl;
     }
   };
 
@@ -104,35 +129,32 @@ const Canvas = ({
     }
   };
 
+  const getCanvasCoords = (e) => {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const scaleX = canvasRef.current.width / rect.width;
+    const scaleY = canvasRef.current.height / rect.height;
+    return {
+      x: (e.nativeEvent.clientX - rect.left) * scaleX,
+      y: (e.nativeEvent.clientY - rect.top) * scaleY,
+    };
+  };
+
   const startDrawing = (e) => {
     pushToHistory();
-    const rect = canvasRef.current.getBoundingClientRect();
-    setStartPoint({
-      x: e.nativeEvent.clientX - rect.left,
-      y: e.nativeEvent.clientY - rect.top,
-    });
+    const { x, y } = getCanvasCoords(e);
+    setStartPoint({ x, y });
     if (shape === "pen" || isEraser) {
       const ctx = canvasRef.current.getContext("2d");
       ctx.beginPath();
-      ctx.moveTo(
-        e.nativeEvent.clientX - rect.left,
-        e.nativeEvent.clientY - rect.top
-      );
+      ctx.moveTo(x, y);
       setIsDrawing(true);
-    } else if (shape) {
-      // For shapes, just record the start point
-      const rect = canvasRef.current.getBoundingClientRect();
-      setStartPoint({
-        x: e.nativeEvent.clientX - rect.left,
-        y: e.nativeEvent.clientY - rect.top,
-      });
     }
   };
 
   const draw = (e) => {
     if (!isDrawing) return;
-    if (shape !== "pen" && !isEraser) return; // Only draw on drag for pen/eraser
-    const rect = canvasRef.current.getBoundingClientRect();
+    if (shape !== "pen" && !isEraser) return;
+    const { x, y } = getCanvasCoords(e);
     const ctx = canvasRef.current.getContext("2d");
     ctx.save();
     if (isEraser) {
@@ -144,25 +166,29 @@ const Canvas = ({
     }
     ctx.lineWidth = penSize;
     ctx.lineCap = "round";
-    ctx.lineTo(
-      e.nativeEvent.clientX - rect.left,
-      e.nativeEvent.clientY - rect.top
-    );
+    ctx.lineTo(x, y);
     ctx.stroke();
     ctx.restore();
-    saveCanvas();
+    debouncedSaveCanvas(); // <-- Use debounce here
   };
-
+  
   const stopDrawing = (e) => {
     if (shape !== "pen" && !isEraser && startPoint) {
-      const rect = canvasRef.current.getBoundingClientRect();
-      const endPoint = {
-        x: e.nativeEvent.clientX - rect.left,
-        y: e.nativeEvent.clientY - rect.top,
-      };
-      drawShape(startPoint, endPoint);
+      const { x, y } = getCanvasCoords(e);
+      drawShape(startPoint, { x, y });
       setStartPoint(null);
-      saveCanvas();
+      // Save after shape is drawn
+      if (canvasRef.current) {
+        const dataUrl = canvasRef.current.toDataURL("image/png");
+        onChange && onChange(dataUrl);
+      }
+    }
+    if (isDrawing && (shape === "pen" || isEraser)) {
+      // Save after pen/eraser drawing is done
+      if (canvasRef.current) {
+        const dataUrl = canvasRef.current.toDataURL("image/png");
+        onChange && onChange(dataUrl);
+      }
     }
     setIsDrawing(false);
   };
@@ -214,9 +240,11 @@ const Canvas = ({
     }
     ctx.restore();
   };
+
   const handleReset = () => {
     const ctx = canvasRef.current.getContext("2d");
     ctx.clearRect(0, 0, width, height);
+    lastLoadedValue.current = null;
     saveCanvas();
     setResult(null);
     onResult && onResult(null);
@@ -224,6 +252,7 @@ const Canvas = ({
 
   const handleCalculate = async () => {
     if (!canvasRef.current) return;
+    setShowResult(true);
     const dataUrl = canvasRef.current.toDataURL("image/png");
     setResult("Loading...");
     const answer = await sendCanvasToGemini(dataUrl, noteId);
@@ -244,19 +273,12 @@ const Canvas = ({
         return arr
           .map((item) => {
             if (item.expr && item.result !== undefined) {
-              // If expr looks like a math equation, use '='
-              if (
-                /[\d\w\s\+\-\*\/\^=]+/.test(item.expr) &&
-                typeof item.result === "number"
-              ) {
-                return `${item.expr} = ${item.result}`;
-              }
-              // Otherwise, use "expr, result: result"
-              return `${item.expr}, result: ${item.result}`;
+              return `${item.expr.replace(/\s+/g, "")}=${item.result}`;
             }
-            return JSON.stringify(item);
+            return "";
           })
-          .join("\n");
+          .filter(Boolean)
+          .join(", ");
       }
       return result;
     } catch (e) {
@@ -267,71 +289,77 @@ const Canvas = ({
 
   return (
     <div className="canvas-container">
-      <div className="canvas-toolbar">
-        <button onClick={handleUndo} disabled={history.length === 0}>
-          Undo
+      <div className="canvas-toolbar-outer">
+        <button className="sticky-btn" onClick={onSwitchToNotes}>
+          Convert to Notes
         </button>
-        <button onClick={handleRedo} disabled={redoStack.length === 0}>
-          Redo
-        </button>
-        <button onClick={handleReset}>Reset</button>
-        <button
-          onClick={() => setIsEraser((v) => !v)}
-          style={{ background: isEraser ? "#eee" : "#fff" }}
-          title="Eraser"
-        >
-          {isEraser ? "Eraser On" : "Eraser"}
-        </button>
-        <button
-          className={shape === "pen" ? "active" : ""}
-          onClick={() => setShape("pen")}
-        >
-          Pen
-        </button>
-        <div className="shapes-dropdown">
-          {/* <label htmlFor="shape-select">Shapes:</label> */}
-          <select
-            id="shape-select"
-            value={shape}
-            onChange={(e) => setShape(e.target.value)}
+        <div className="canvas-toolbar-scroll">
+          {/* All other toolbar buttons (undo, redo, pen, shapes, colors, etc.) */}
+          <button onClick={handleUndo} disabled={history.length === 0}>
+            Undo
+          </button>
+          <button onClick={handleRedo} disabled={redoStack.length === 0}>
+            Redo
+          </button>
+          <button onClick={handleReset}>Reset</button>
+          <button
+            onClick={() => setIsEraser((v) => !v)}
+            style={{ background: isEraser ? "#eee" : "#fff" }}
+            title="Eraser"
           >
-            <option value="">--Shapes--</option>
-            <option value="square">Square</option>
-            <option value="rect">Rectangle</option>
-            <option value="circle">Circle</option>
-            <option value="triangle">Triangle</option>
-            <option value="line">Line</option>
-            {/* Add more shapes as needed */}
-          </select>
-        </div>
-        <div className="canvas-colors">
-          {COLORS.map((c) => (
-            <button
-              key={c}
-              className="canvas-color"
-              style={{
-                background: c,
-                border: color === c && !isEraser ? "2px solid #333" : "none",
-              }}
-              onClick={() => {
-                setColor(c);
-                setIsEraser(false);
-              }}
+            {isEraser ? "Eraser On" : "Eraser"}
+          </button>
+          <button
+            className={shape === "pen" ? "active" : ""}
+            onClick={() => setShape("pen")}
+          >
+            Pen
+          </button>
+          <div className="shapes-dropdown">
+            <select
+              id="shape-select"
+              value={shape}
+              onChange={(e) => setShape(e.target.value)}
+            >
+              <option value="">--Shapes--</option>
+              <option value="square">Square</option>
+              <option value="rect">Rectangle</option>
+              <option value="circle">Circle</option>
+              <option value="triangle">Triangle</option>
+              <option value="line">Line</option>
+            </select>
+          </div>
+          <div className="canvas-colors">
+            {COLORS.map((c) => (
+              <button
+                key={c}
+                className="canvas-color"
+                style={{
+                  background: c,
+                  border: color === c && !isEraser ? "2px solid #333" : "none",
+                }}
+                onClick={() => {
+                  setColor(c);
+                  setIsEraser(false);
+                }}
+              />
+            ))}
+          </div>
+          <label style={{ marginLeft: 8 }}>
+            Pen Size
+            <input
+              type="range"
+              min={1}
+              max={15}
+              value={penSize}
+              onChange={(e) => setPenSize(Number(e.target.value))}
+              style={{ verticalAlign: "middle", marginLeft: 4 }}
             />
-          ))}
+          </label>
         </div>
-        <label style={{ marginLeft: 8 }}>
-          Pen Size
-          <input
-            type="range"
-            min={1}
-            max={15}
-            value={penSize}
-            onChange={(e) => setPenSize(Number(e.target.value))}
-            style={{ verticalAlign: "middle", marginLeft: 4 }}
-          />
-        </label>
-        <button onClick={handleCalculate}>Calculate</button>
+        <button className="sticky-btn" onClick={handleCalculate}>
+          Calculate
+        </button>
       </div>
       <canvas
         ref={canvasRef}
@@ -342,13 +370,55 @@ const Canvas = ({
         onMouseMove={draw}
         onMouseUp={stopDrawing}
         onMouseOut={stopDrawing}
+        style={{ width: "100%", maxWidth: "100%", background: "#fff" }}
       />
-      {result && (
-        <div className="canvas-result">
-          <strong>Result:</strong>
-          <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
-            {formatResult(result)}
-          </pre>
+      {result && showResult && (
+        <div
+          className="canvas-result-sticky"
+          style={{
+            position: "fixed",
+            left: "50%",
+            bottom: "32px",
+            transform: "translateX(-50%)",
+            zIndex: 100,
+            background: "#18181b",
+            color: "#fff",
+            border: "2px solid #fff",
+            borderRadius: "8px",
+            minWidth: "320px",
+            maxWidth: "90vw",
+            maxHeight: "180px",
+            overflowY: "auto",
+            boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
+            padding: "1rem 2.5rem 1rem 1rem",
+            display: "flex",
+            alignItems: "flex-start",
+            gap: "1rem",
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <strong>Result:</strong>
+            <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+              {formatResult(result)}
+            </pre>
+          </div>
+          <button
+            onClick={() => setShowResult(false)}
+            style={{
+              background: "none",
+              border: "none",
+              color: "#fff",
+              fontSize: "1.2rem",
+              fontWeight: "bold",
+              cursor: "pointer",
+              position: "absolute",
+              top: "8px",
+              right: "12px",
+            }}
+            title="Close"
+          >
+            ×
+          </button>
         </div>
       )}
     </div>

@@ -1385,48 +1385,55 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     <div className={`editor-container ${!isSidebarOpen ? "full-width" : ""}`}>
       <EditorHeader onCreate={onCreate} />
       <div className="editor-content-wrapper">
-        <EditorToolbar
-          editor={editor}
-          onFormatText={handleFormatText}
-          onToggleCanvas={() => setCanvasMode((v) => !v)}
-          canvasMode={canvasMode}
-        />
-        <input
-          type="text"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          className="editor-title"
-          placeholder="Note title..."
-        />
         {canvasMode ? (
-          <Canvas
-            value={note.canvasImage}
-            onChange={(img) =>
-              onUpdate(note._id, { ...note, canvasImage: img })
-            }
-            noteId={note._id}
-          />
-        ) : (
-          <Slate
-            editor={editor}
-            initialValue={initialValue} // Use initialValue for initial setup
-            value={slateValue} // Controlled component with slateValue
-            onChange={handleSlateChange}
-            // FIX 1: Correct the key to prevent re-initialization on every render
-            key={note?._id || "new-note"}
-          >
-            <Editable
-              className="editor-content rich-editor"
-              renderElement={renderElement}
-              renderLeaf={renderLeaf}
-              placeholder="Start typing your note..."
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck={false}
-              data-gramm="false" // Consider data-gramm_editor="false" if Grammarly is an issue
-              onKeyDown={handleKeyDown}
+          <>
+            {/* Canvas Toolbar and Canvas */}
+            <Canvas
+              value={note.canvasImage}
+              onChange={(img) =>
+                onUpdate(note._id, { ...note, canvasImage: img })
+              }
+              noteId={note._id}
+              onSwitchToNotes={() => setCanvasMode(false)}
             />
-          </Slate>
+          </>
+        ) : (
+          <>
+            {/* Normal Editor Toolbar and Editor */}
+            <EditorToolbar
+              editor={editor}
+              onFormatText={handleFormatText}
+              onToggleCanvas={() => setCanvasMode(true)}
+              canvasMode={canvasMode}
+            />
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="editor-title"
+              placeholder="Note title..."
+            />
+            <Slate
+              editor={editor}
+              initialValue={initialValue} // Use initialValue for initial setup
+              value={slateValue} // Controlled component with slateValue
+              onChange={handleSlateChange}
+              // FIX 1: Correct the key to prevent re-initialization on every render
+              key={note?._id || "new-note"}
+            >
+              <Editable
+                className="editor-content rich-editor"
+                renderElement={renderElement}
+                renderLeaf={renderLeaf}
+                placeholder="Start typing your note..."
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                data-gramm="false" // Consider data-gramm_editor="false" if Grammarly is an issue
+                onKeyDown={handleKeyDown}
+              />
+            </Slate>
+          </>
         )}
       </div>
       <AIAssistant
