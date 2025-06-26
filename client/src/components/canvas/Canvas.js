@@ -3,8 +3,17 @@ import "./Canvas.css";
 import { sendCanvasToGemini } from "../../services/canvasGeminiService";
 
 const COLORS = [
-  "#ffffff", "#ee3333", "#e64980", "#be4bdb", "#893200",
-  "#228be6", "#3333ee", "#40c057", "#00aa00", "#fab005", "#fd7e14"
+  "#ffffff",
+  "#ee3333",
+  "#e64980",
+  "#be4bdb",
+  "#893200",
+  "#228be6",
+  "#3333ee",
+  "#40c057",
+  "#00aa00",
+  "#fab005",
+  "#fd7e14",
 ];
 
 const Canvas = ({
@@ -37,8 +46,19 @@ const Canvas = ({
         const ctx = canvasRef.current.getContext("2d");
         const img = new window.Image();
         img.onload = () => {
-          ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-          ctx.drawImage(img, 0, 0, canvasRef.current.width, canvasRef.current.height);
+          ctx.clearRect(
+            0,
+            0,
+            canvasRef.current.width,
+            canvasRef.current.height
+          );
+          ctx.drawImage(
+            img,
+            0,
+            0,
+            canvasRef.current.width,
+            canvasRef.current.height
+          );
         };
         img.src = value;
       } else if (canvasRef.current) {
