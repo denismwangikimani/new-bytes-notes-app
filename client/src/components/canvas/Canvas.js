@@ -3,17 +3,8 @@ import "./Canvas.css";
 import { sendCanvasToGemini } from "../../services/canvasGeminiService";
 
 const COLORS = [
-  "#ffffff",
-  "#ee3333",
-  "#e64980",
-  "#be4bdb",
-  "#893200",
-  "#228be6",
-  "#3333ee",
-  "#40c057",
-  "#00aa00",
-  "#fab005",
-  "#fd7e14",
+  "#ffffff", "#ee3333", "#e64980", "#be4bdb", "#893200",
+  "#228be6", "#3333ee", "#40c057", "#00aa00", "#fab005", "#fd7e14"
 ];
 
 const Canvas = ({
@@ -26,6 +17,8 @@ const Canvas = ({
   onSwitchToNotes,
 }) => {
   const canvasRef = useRef(null);
+  const lastLoadedNoteId = useRef(null);
+
   const [isDrawing, setIsDrawing] = useState(false);
   const [color, setColor] = useState("#ffffff");
   const [result, setResult] = useState(null);
@@ -33,56 +26,28 @@ const Canvas = ({
   const [isEraser, setIsEraser] = useState(false);
   const [history, setHistory] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
-  const [shape, setShape] = useState("pen"); // "free", "rect", "circle", "triangle", etc.
+  const [shape, setShape] = useState("pen");
   const [startPoint, setStartPoint] = useState(null);
   const [showResult, setShowResult] = useState(true);
-  const lastLoadedValue = useRef(null);
-  const saveTimeout = useRef(null);
 
-  // Load saved canvas image for this note
+  // Only reload canvas when switching notes or after reset
   useEffect(() => {
-    // Only reload if value is different from last loaded
-    if (
-      !isDrawing &&
-      value &&
-      value !== lastLoadedValue.current &&
-      canvasRef.current
-    ) {
-      const ctx = canvasRef.current.getContext("2d");
-      const img = new window.Image();
-      img.onload = () => {
-        ctx.clearRect(0, 0, width, height);
-        ctx.drawImage(img, 0, 0, width, height);
-        lastLoadedValue.current = value;
-      };
-      img.src = value;
-    } else if (!isDrawing && !value && canvasRef.current) {
-      const ctx = canvasRef.current.getContext("2d");
-      ctx.clearRect(0, 0, width, height);
-      lastLoadedValue.current = null;
-    }
-    // eslint-disable-next-line
-  }, [value, width, height, isDrawing]);
-
-  const debouncedSaveCanvas = () => {
-    if (saveTimeout.current) clearTimeout(saveTimeout.current);
-    saveTimeout.current = setTimeout(() => {
-      if (canvasRef.current) {
-        const dataUrl = canvasRef.current.toDataURL("image/png");
-        onChange && onChange(dataUrl);
+    if (noteId !== lastLoadedNoteId.current) {
+      if (value && canvasRef.current) {
+        const ctx = canvasRef.current.getContext("2d");
+        const img = new window.Image();
+        img.onload = () => {
+          ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+          ctx.drawImage(img, 0, 0, canvasRef.current.width, canvasRef.current.height);
+        };
+        img.src = value;
+      } else if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext("2d");
+        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       }
-    }, 500); // 500ms after last draw
-  };
-
-  // Save canvas image to parent only on mouse up (after drawing)
-  const saveCanvas = () => {
-    if (canvasRef.current) {
-      const dataUrl = canvasRef.current.toDataURL("image/png");
-      // Don't call onChange here during every draw!
-      // We'll call it only after drawing is done.
-      return dataUrl;
+      lastLoadedNoteId.current = noteId;
     }
-  };
+  }, [noteId, value]);
 
   // Save current state to history
   const pushToHistory = () => {
@@ -105,7 +70,6 @@ const Canvas = ({
       img.onload = () => {
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
-        saveCanvas();
       };
       img.src = prevState;
     }
@@ -123,7 +87,6 @@ const Canvas = ({
       img.onload = () => {
         ctx.clearRect(0, 0, width, height);
         ctx.drawImage(img, 0, 0, width, height);
-        saveCanvas();
       };
       img.src = nextState;
     }
@@ -169,9 +132,8 @@ const Canvas = ({
     ctx.lineTo(x, y);
     ctx.stroke();
     ctx.restore();
-    debouncedSaveCanvas(); // <-- Use debounce here
   };
-  
+
   const stopDrawing = (e) => {
     if (shape !== "pen" && !isEraser && startPoint) {
       const { x, y } = getCanvasCoords(e);
@@ -202,7 +164,6 @@ const Canvas = ({
     ctx.beginPath();
     switch (shape) {
       case "square": {
-        // Draw a perfect square (equal width and height)
         const size = Math.max(
           Math.abs(end.x - start.x),
           Math.abs(end.y - start.y)
@@ -242,12 +203,14 @@ const Canvas = ({
   };
 
   const handleReset = () => {
-    const ctx = canvasRef.current.getContext("2d");
-    ctx.clearRect(0, 0, width, height);
-    lastLoadedValue.current = null;
-    saveCanvas();
+    if (canvasRef.current) {
+      const ctx = canvasRef.current.getContext("2d");
+      ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+    }
+    lastLoadedNoteId.current = null; // Force reload if needed
     setResult(null);
     onResult && onResult(null);
+    // Optionally, call onChange("") to clear DB
   };
 
   const handleCalculate = async () => {
@@ -263,10 +226,8 @@ const Canvas = ({
   const formatResult = (result) => {
     if (!result) return "";
     try {
-      // Try to parse as JSON or Python-style list of dicts
       let arr = result;
       if (typeof result === "string") {
-        // Replace single quotes with double quotes for JSON.parse
         arr = JSON.parse(result.replace(/'/g, '"'));
       }
       if (Array.isArray(arr)) {
@@ -282,7 +243,6 @@ const Canvas = ({
       }
       return result;
     } catch (e) {
-      // If parsing fails, just show the raw result
       return result;
     }
   };
@@ -294,7 +254,6 @@ const Canvas = ({
           Convert to Notes
         </button>
         <div className="canvas-toolbar-scroll">
-          {/* All other toolbar buttons (undo, redo, pen, shapes, colors, etc.) */}
           <button onClick={handleUndo} disabled={history.length === 0}>
             Undo
           </button>
