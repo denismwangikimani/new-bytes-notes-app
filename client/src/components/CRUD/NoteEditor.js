@@ -6,14 +6,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import {
-  FileIcon,
-  Maximize,
-  Minimize,
-  //Image as ImageIcon,
-  //Video as VideoIcon,
-  //Link as LinkIcon,
-} from "lucide-react";
+import { FileIcon, Maximize, Minimize } from "lucide-react";
 import DOMPurify from "dompurify";
 import MediaDialog from "../MediaDialog";
 import EditorHeader from "./EditorHeader";
@@ -27,7 +20,7 @@ import EditorToolbar from "../EditorToolbar";
 import { generateContent, transformText } from "../../services/geminiService";
 import FlashcardModal from "../FlashcardModal";
 import FileSidebar from "./FileSidebar";
-import Canvas from "../canvas/Canvas";
+import Canvas from "../canvas/Canvas"; // Keep for DrawingElement
 import "./notes.css";
 
 // Slate imports
@@ -39,7 +32,6 @@ import {
   Range,
   Path,
   Element as SlateElement,
-  //Descendant,
   Node,
 } from "slate";
 import {
@@ -53,10 +45,8 @@ import { withHistory } from "slate-history";
 import { isHotkey } from "is-hotkey";
 import escapeHtml from "escape-html";
 
-// --- HTML Deserialization/Serialization (Outside Component) ---
-// ... (Keep your existing deserialize, serialize, ELEMENT_TAGS, TEXT_TAGS, deserializeChildren, deserializeNode, serializeNode, purifyConfig functions here)
-// These seem largely okay for now, the primary issue is likely in the React component lifecycle.
-
+// --- (Keep all your existing deserialize/serialize functions here) ---
+// ...
 const ELEMENT_TAGS = {
   A: (el) => ({
     type: "link",
@@ -164,99 +154,56 @@ const deserializeChildren = (parent) => {
 
 const deserializeNode = (el) => {
   if (el.nodeType === 3) {
-    // TEXT_NODE
-    const text = el.textContent;
-    return { text: text || "" }; // Ensure text is never null
-  } else if (el.nodeType === 1) {
-    // ELEMENT_NODE
-    const { nodeName } = el;
-
-    // Handle void elements like BR
-    if (nodeName === "BR") {
-      return null; // Or { text: '\n' } if you want to preserve line breaks explicitly
-    }
-
-    let children = deserializeChildren(el);
-
-    // If an element has no children or only empty/whitespace text, ensure it has at least one empty text node
-    // This is crucial for Slate's normalization rules, especially for void elements or elements that should contain text.
-    if (
-      children.length === 0 ||
-      children.every(
-        (c) =>
-          (Text.isText(c) && !c.text?.trim()) ||
-          (typeof c === "string" && !c.trim())
-      )
-    ) {
-      children = [{ text: "" }];
-    }
-
-    const elementFn = ELEMENT_TAGS[nodeName];
-    if (elementFn) {
-      const node = elementFn(el);
-      // Ensure the returned node has children, especially if it's not a void element
-      if (!node.children || node.children.length === 0) {
-        node.children = [{ text: "" }];
-      }
-      // Apply alignment from style attribute if present
-      const textAlign = el.style.textAlign;
-      if (
-        textAlign &&
-        ["left", "center", "right", "justify"].includes(textAlign)
-      ) {
-        node.align = textAlign;
-      }
-      return node;
-    }
-
-    const markFn = TEXT_TAGS[nodeName];
-    if (markFn) {
-      const marks = markFn(el);
-      // Apply marks to children, merging recursively
-      return children.map((child) => {
-        if (Text.isText(child)) {
-          return { ...marks, ...child };
-        } else if (SlateElement.isElement(child)) {
-          // If a mark tag wraps a block, this might be an issue.
-          // Typically, marks apply to text nodes.
-          // For simplicity, let's assume marks are applied to text or inline elements.
-          // If child.children exists, recurse, otherwise apply to child itself if it's inline.
-          if (child.children) {
-            return {
-              ...child,
-              children: child.children.map((c) => ({ ...marks, ...c })),
-            };
-          }
-        }
-        return child; // Should not happen if children are text or elements
-      });
-    }
-
-    // Default fallback for unknown elements: treat as paragraph or pass children if block
-    // This part needs to be careful not to create invalid structures.
-    // A simple approach: if it contains block children, return them, else wrap in paragraph.
-    const containsBlockChild = children.some(
-      (child) =>
-        typeof child === "object" &&
-        child !== null &&
-        !Text.isText(child) && // It's an element
-        Editor.isBlock(createEditor(), child) // Check if it's a block type
-    );
-    if (containsBlockChild) {
-      return children; // Pass block children up
-    } else {
-      // Wrap inline content or unknown tags in a paragraph
-      return {
-        type: "paragraph",
-        children: children.length > 0 ? children : [{ text: "" }],
-      };
-    }
+    // Text node
+    return el.textContent.trim() === "" ? null : { text: el.textContent };
+  } else if (el.nodeType !== 1) {
+    // Not an element node
+    return null;
   }
 
-  return null; // Ignore other node types like comments
+  const nodeName = el.nodeName.toUpperCase();
+
+  // Handle BR tags as newlines within text, or null if they create empty lines between blocks
+  if (nodeName === "BR") {
+    return null;
+  }
+
+  let children = deserializeChildren(el);
+
+  if (children.length === 0) {
+    children = [{ text: "" }];
+  }
+
+  const elementFn = ELEMENT_TAGS[nodeName];
+  if (elementFn) {
+    const node = elementFn(el);
+    if (!node.children || node.children.length === 0) {
+      node.children = [{ text: "" }];
+    }
+    const textAlign = el.style.textAlign;
+    if (
+      textAlign &&
+      ["left", "center", "right", "justify"].includes(textAlign)
+    ) {
+      node.align = textAlign;
+    }
+    return node;
+  }
+
+  const markFn = TEXT_TAGS[nodeName];
+  if (markFn) {
+    const marks = markFn(el);
+    return children.map((child) => {
+      if (Text.isText(child)) {
+        return { ...marks, ...child };
+      }
+      return child;
+    });
+  }
+
+  return children;
 };
 
-// Initial purify config
 const purifyConfig = {
   ADD_ATTR: [
     "target",
@@ -265,51 +212,39 @@ const purifyConfig = {
     "autocorrect",
     "spellcheck",
     "data-gramm",
-    "style", // Allow style for alignment, colors, etc.
-    "data-type", // For media containers
+    "style",
+    "data-type",
     "data-filename",
     "data-size",
     "data-content-type",
   ],
-  ADD_TAGS: ["div", "span"], // Ensure div and span are allowed
+  ADD_TAGS: ["div", "span"],
   USE_PROFILES: { html: true },
-  ALLOW_DATA_ATTR: true, // Allow all data-* attributes
-  // FORBID_TAGS: [], // Potentially allow more tags if needed, or specify carefully
-  // FORBID_ATTR: []
+  ALLOW_DATA_ATTR: true,
 };
 
 const deserialize = (htmlString) => {
   if (!htmlString || !htmlString.trim()) {
     return [{ type: "paragraph", children: [{ text: "" }] }];
   }
-
-  // 1. Sanitize the HTML string
   const sanitizedHtml = DOMPurify.sanitize(htmlString, purifyConfig);
-
-  // 2. Parse the sanitized HTML
   const parsed = new DOMParser().parseFromString(sanitizedHtml, "text/html");
   const body = parsed.body;
 
-  // If body is empty after sanitization, return default
   if (!body || (!body.hasChildNodes() && !body.textContent?.trim())) {
     return [{ type: "paragraph", children: [{ text: "" }] }];
   }
 
-  // 3. Deserialize the DOM body into Slate nodes
   const slateNodes = deserializeChildren(body);
 
-  // 4. Ensure the top level consists of block nodes. Wrap stray text/inline nodes.
   const ensureBlocks = (nodes) => {
     const wrappedNodes = [];
     let currentParagraph = null;
-    const dummyEditor = createEditor(); // Helper to check isInline
+    const dummyEditor = createEditor();
 
     for (const node of nodes) {
-      if (node === null) continue; // Skip null nodes from BRs etc.
-
-      // Check if the node is inline (text or inline element)
+      if (node === null) continue;
       const isInlineNode =
-        typeof node === "string" || // Should ideally be {text: string} by now
         Text.isText(node) ||
         (SlateElement.isElement(node) && dummyEditor.isInline(node));
 
@@ -317,54 +252,29 @@ const deserialize = (htmlString) => {
         if (!currentParagraph) {
           currentParagraph = { type: "paragraph", children: [] };
         }
-        // Ensure the pushed node is a valid Text node or inline Element
-        if (typeof node === "string") {
-          currentParagraph.children.push({ text: node });
-        } else if (Text.isText(node)) {
-          currentParagraph.children.push(node);
-        } else if (SlateElement.isElement(node) && dummyEditor.isInline(node)) {
-          // This case handles inline elements like <Link>
-          currentParagraph.children.push(node);
-        }
+        currentParagraph.children.push(node);
       } else {
-        // It's a block node
         if (currentParagraph) {
-          // Ensure paragraph has non-empty children or a single empty text node
-          if (
-            currentParagraph.children.length === 0 ||
-            currentParagraph.children.every(
-              (c) => Text.isText(c) && !c.text.trim()
-            )
-          ) {
+          if (currentParagraph.children.length === 0) {
             currentParagraph.children = [{ text: "" }];
           }
           wrappedNodes.push(currentParagraph);
           currentParagraph = null;
         }
-        // Ensure the block node itself has valid children if it's not void
         if (SlateElement.isElement(node) && !dummyEditor.isVoid(node)) {
-          if (
-            !node.children ||
-            node.children.length === 0 ||
-            node.children.every((c) => Text.isText(c) && !c.text?.trim())
-          ) {
+          if (!node.children || node.children.length === 0) {
             node.children = [{ text: "" }];
           }
         }
         wrappedNodes.push(node);
       }
     }
-    // Add any trailing paragraph
     if (currentParagraph) {
-      if (
-        currentParagraph.children.length === 0 ||
-        currentParagraph.children.every((c) => Text.isText(c) && !c.text.trim())
-      ) {
+      if (currentParagraph.children.length === 0) {
         currentParagraph.children = [{ text: "" }];
       }
       wrappedNodes.push(currentParagraph);
     }
-    // Ensure the final result is not empty
     return wrappedNodes.length > 0
       ? wrappedNodes
       : [{ type: "paragraph", children: [{ text: "" }] }];
@@ -372,7 +282,6 @@ const deserialize = (htmlString) => {
 
   const finalNodes = ensureBlocks(slateNodes);
 
-  // Final check: if finalNodes is empty or only contains empty paragraphs, return a single empty paragraph.
   if (
     finalNodes.length === 0 ||
     finalNodes.every(
@@ -388,19 +297,15 @@ const deserialize = (htmlString) => {
   return finalNodes;
 };
 
-// Serialize Slate JSON back to HTML
 const serializeNode = (node) => {
   if (Text.isText(node)) {
-    // Text node handling remains the same
     let string = escapeHtml(node.text);
-    // Apply marks
     if (node.code) string = `<code>${string}</code>`;
     if (node.italic) string = `<em>${string}</em>`;
     if (node.underline) string = `<u>${string}</u>`;
     if (node.strikethrough) string = `<s>${string}</s>`;
     if (node.bold) string = `<strong>${string}</strong>`;
 
-    // Apply style marks as spans
     const styles = {};
     if (node.fontFamily) styles["font-family"] = node.fontFamily;
     if (node.fontSize) styles["font-size"] = node.fontSize;
@@ -417,16 +322,11 @@ const serializeNode = (node) => {
     return string;
   }
 
-  // It's an element node
   const children = node.children.map((n) => serializeNode(n)).join("");
-
-  // Handle alignment style
   const style = node.align ? ` style="text-align: ${node.align};"` : "";
 
   switch (node.type) {
-    // Existing cases remain the same
     case "paragraph":
-      // Ensure paragraphs always have some content for HTML, even if it's a non-breaking space
       return `<p${style}>${children || "&nbsp;"}</p>`;
     case "heading-one":
       return `<h1${style}>${children}</h1>`;
@@ -443,22 +343,15 @@ const serializeNode = (node) => {
     case "block-quote":
       return `<blockquote${style}>${children}</blockquote>`;
     case "code":
-      // Code blocks in <pre><code> should preserve whitespace, handled by CSS usually
       return `<pre${style}><code>${children}</code></pre>`;
     case "link":
       return `<a href="${escapeHtml(
         node.url
       )}" target="_blank" rel="noopener noreferrer">${children}</a>`;
-
-    // Add cases for media elements
-    // For void elements, Slate expects an empty text child. HTML serialization might not need it,
-    // but ensure the deserializer handles this structure.
-    // The <p></p> inside media divs is a bit unusual, consider if it's necessary or if a specific class/structure is better.
-    // It might be for ensuring block behavior or spacing.
     case "image":
       return `<div data-type="image" class="media-container"><img src="${escapeHtml(
         node.url
-      )}" alt="${escapeHtml(node.alt || "")}" /><p></p></div>`; // The <p></p> might be for spacing or to ensure it's treated as a block
+      )}" alt="${escapeHtml(node.alt || "")}" /><p></p></div>`;
     case "video":
       return `<div data-type="video" class="media-container"><video controls src="${escapeHtml(
         node.url
@@ -473,74 +366,61 @@ const serializeNode = (node) => {
       )}"><a href="${escapeHtml(node.url)}">${escapeHtml(
         node.filename
       )}</a><p></p></div>`;
-
     default:
-      return children; // Or handle unknown types more explicitly
+      return children;
   }
 };
 
 const serialize = (value) => {
-  // Ensure value is an array
   if (!Array.isArray(value)) {
     console.error("Invalid Slate value for serialization:", value);
-    return ""; // Return empty string for invalid input
+    return "";
   }
   return value.map((n) => serializeNode(n)).join("");
 };
 
-// withMedia function to handle media elements
 const withMedia = (editor) => {
   const { isVoid, insertBreak, normalizeNode } = editor;
 
   editor.isVoid = (element) => {
-    return ["image", "video", "file"].includes(element.type)
+    return ["image", "video", "file", "drawing"].includes(element.type)
       ? true
       : isVoid(element);
   };
 
   editor.insertBreak = () => {
     const { selection } = editor;
-
     if (selection) {
       const [match] = Editor.nodes(editor, {
         match: (n) =>
           !Editor.isEditor(n) && SlateElement.isElement(n) && editor.isVoid(n),
-        mode: "highest", // Check the highest level void node at selection
+        mode: "highest",
       });
-
       if (match) {
-        // If cursor is in a void node, insert a paragraph after it
         Transforms.insertNodes(
           editor,
           { type: "paragraph", children: [{ text: "" }] },
-          { at: Path.next(match[1]), select: true } // Select the new paragraph
+          { at: Path.next(match[1]), select: true }
         );
         return;
       }
     }
-
-    insertBreak(); // Call original insertBreak for non-void cases
+    insertBreak();
   };
 
-  // Ensure that void elements are followed by a paragraph if they are the last child.
-  // This helps with editing experience.
   editor.normalizeNode = (entry) => {
     const [node, path] = entry;
-
     if (SlateElement.isElement(node) && editor.isVoid(node)) {
-      // Check if this void element is the last child in the editor
-      // or if the next sibling is not a paragraph (or another suitable block)
       const parent = Editor.parent(editor, path);
       const isLastChild =
         path[path.length - 1] === parent[0].children.length - 1;
-
       if (isLastChild) {
         Transforms.insertNodes(
           editor,
           { type: "paragraph", children: [{ text: "" }] },
           { at: Path.next(path) }
         );
-        return; // Return because the structure changed
+        return;
       } else {
         const nextNode = Editor.node(editor, Path.next(path));
         if (
@@ -548,7 +428,6 @@ const withMedia = (editor) => {
           SlateElement.isElement(nextNode[0]) &&
           editor.isVoid(nextNode[0])
         ) {
-          // If the next node is also a void node, insert a paragraph between them or after the current one
           Transforms.insertNodes(
             editor,
             { type: "paragraph", children: [{ text: "" }] },
@@ -558,7 +437,6 @@ const withMedia = (editor) => {
         }
       }
     }
-    // Call the original normalizeNode for other cases
     if (normalizeNode) {
       normalizeNode(entry);
     }
@@ -567,9 +445,7 @@ const withMedia = (editor) => {
   return editor;
 };
 
-// --- NoteEditor Component -
 const NoteEditor = ({ note, onUpdate, onCreate }) => {
-  // --- State variables ---
   const [title, setTitle] = useState(note?.title || "");
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const [aiResponse, setAIResponse] = useState("");
@@ -579,13 +455,9 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     id: null,
     type: null,
   });
-
-  //file states
   const [isFileSidebarOpen, setIsFileSidebarOpen] = useState(false);
   const [currentFileUrl, setCurrentFileUrl] = useState(null);
   const [currentFileName, setCurrentFileName] = useState(null);
-
-  // Text selection and transformation states
   const [selectionPosition, setSelectionPosition] = useState(null);
   const [selectedText, setSelectedText] = useState("");
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
@@ -593,26 +465,31 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [isTransformLoading, setIsTransformLoading] = useState(false);
   const [transformType, setTransformType] = useState("");
   const [isFlashcardModalOpen, setIsFlashcardModalOpen] = useState(false);
-
-  // Ask AI states
   const [isAskAIModalOpen, setIsAskAIModalOpen] = useState(false);
   const [askAIResponse, setAskAIResponse] = useState("");
   const [isAskAILoading, setIsAskAILoading] = useState(false);
-
-  //media states
   const [isMediaDialogOpen, setIsMediaDialogOpen] = useState(false);
   const [mediaDialogType, setMediaDialogType] = useState(null);
 
-  // --- Slate Specific State ---
+  // --- New Integrated Drawing State ---
+  const [isDrawingMode, setIsDrawingMode] = useState(false);
+  const [penColor, setPenColor] = useState("#000000");
+  const [penSize, setPenSize] = useState(3);
+  const [isEraser, setIsEraser] = useState(false);
+
+  // --- Refs for canvas and drawing ---
+  const canvasRef = useRef(null);
+  const editorWrapperRef = useRef(null);
+  const isDrawingRef = useRef(false);
+  const lastPositionRef = useRef({ x: 0, y: 0 });
+  const drawingHistory = useRef([]);
+  const historyIndex = useRef(-1);
+
   const editor = useMemo(() => {
     const e = withMedia(withHistory(withReact(createEditor())));
     return e;
-  }, [note?._id]); // Recreate editor when note ID changes (this is fine for major context switch)
+  }, [note?._id]);
 
-  //canvas state
-  const [canvasMode, setCanvasMode] = useState(false);
-
-  // Initial value derived from note content using deserialization
   const initialValue = useMemo(() => {
     const deserialized = deserialize(note?.content);
     return Array.isArray(deserialized) && deserialized.length > 0
@@ -633,40 +510,25 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         : [{ type: "paragraph", children: [{ text: "" }] }]
     );
     setTitle(note?.title || "");
-  }, [note?._id, note?.content, note?.title]); // This effect syncs editor with external note changes
+  }, [note?._id, note?.content, note?.title]);
 
   const { isSidebarOpen } = useSidebar();
   const updateTimeoutRef = useRef(null);
 
   useEffect(() => {
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current);
-    }
     updateTimeoutRef.current = setTimeout(() => {
-      if (note?._id && !isAutoSaving.current) {
-        // Check !isAutoSaving.current here too
-        const currentContent = serialize(slateValue);
-        if (currentContent !== note.content || title !== note.title) {
-          isAutoSaving.current = true;
-          const selection = editor.selection; // Store selection before save
-          onUpdate(note._id, { title, content: currentContent }).finally(() => {
-            setTimeout(() => {
-              // Delay resetting flag to allow parent state to propagate
-              isAutoSaving.current = false;
-              // Try to restore selection if editor still has focus and selection was stored
-              if (selection && ReactEditor.isFocused(editor)) {
-                try {
-                  Transforms.select(editor, selection);
-                } catch (e) {
-                  console.warn(
-                    "Could not restore selection after auto-save.",
-                    e
-                  );
-                }
-              }
-            }, 100); // Small delay
-          });
-        }
+      if (
+        note &&
+        (serialize(slateValue) !== note.content || title !== note.title)
+      ) {
+        isAutoSaving.current = true;
+        onUpdate(note._id, {
+          ...note,
+          content: serialize(slateValue),
+          title,
+        }).finally(() => {
+          isAutoSaving.current = false;
+        });
       }
     }, 3000);
 
@@ -677,6 +539,165 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     };
   }, [slateValue, title, note, onUpdate, editor]);
 
+  // --- Drawing Logic ---
+  const saveToHistory = useCallback(() => {
+    if (!canvasRef.current) return;
+    const dataUrl = canvasRef.current.toDataURL("image/png");
+    if (historyIndex.current < drawingHistory.current.length - 1) {
+      drawingHistory.current = drawingHistory.current.slice(
+        0,
+        historyIndex.current + 1
+      );
+    }
+    drawingHistory.current.push(dataUrl);
+    historyIndex.current = drawingHistory.current.length - 1;
+  }, []);
+
+  const drawImageOnCanvas = useCallback((dataUrl, ctx) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = ctx || canvas.getContext("2d");
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    if (!dataUrl) return;
+
+    const img = new Image();
+    img.onload = () => {
+      context.drawImage(img, 0, 0);
+    };
+    img.src = dataUrl;
+  }, []);
+
+  const handleUndoDrawing = useCallback(() => {
+    if (historyIndex.current > 0) {
+      historyIndex.current--;
+      const imageData = drawingHistory.current[historyIndex.current];
+      drawImageOnCanvas(imageData);
+      onUpdate(note._id, { canvasImage: imageData });
+    }
+  }, [note, onUpdate, drawImageOnCanvas]);
+
+  const handleRedoDrawing = useCallback(() => {
+    if (historyIndex.current < drawingHistory.current.length - 1) {
+      historyIndex.current++;
+      const imageData = drawingHistory.current[historyIndex.current];
+      drawImageOnCanvas(imageData);
+      onUpdate(note._id, { canvasImage: imageData });
+    }
+  }, [note, onUpdate, drawImageOnCanvas]);
+
+  const handleResetDrawing = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const blankImage = canvas.toDataURL("image/png");
+    drawingHistory.current = [blankImage];
+    historyIndex.current = 0;
+    onUpdate(note._id, { canvasImage: "" });
+  }, [note, onUpdate]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const wrapper = editorWrapperRef.current;
+    if (!canvas || !wrapper) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      const currentImageData = canvas.toDataURL();
+      canvas.width = wrapper.scrollWidth;
+      canvas.height = wrapper.scrollHeight;
+      const ctx = canvas.getContext("2d");
+      drawImageOnCanvas(currentImageData, ctx);
+    });
+
+    resizeObserver.observe(wrapper);
+
+    canvas.width = wrapper.scrollWidth;
+    canvas.height = wrapper.scrollHeight;
+    const ctx = canvas.getContext("2d");
+    if (note?.canvasImage) {
+      drawImageOnCanvas(note.canvasImage, ctx);
+      drawingHistory.current = [note.canvasImage];
+      historyIndex.current = 0;
+    } else {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawingHistory.current = [canvas.toDataURL("image/png")];
+      historyIndex.current = 0;
+    }
+
+    return () => resizeObserver.disconnect();
+  }, [note?._id, note?.canvasImage, drawImageOnCanvas]);
+
+  const getCoords = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.clientX ?? e.touches?.[0]?.clientX;
+    const clientY = e.clientY ?? e.touches?.[0]?.clientY;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  };
+
+  const startDrawing = useCallback((e) => {
+    isDrawingRef.current = true;
+    lastPositionRef.current = getCoords(e);
+  }, []);
+
+  const draw = useCallback(
+    (e) => {
+      if (!isDrawingRef.current) return;
+      e.preventDefault();
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
+      const newPos = getCoords(e);
+      ctx.beginPath();
+      ctx.moveTo(lastPositionRef.current.x, lastPositionRef.current.y);
+      ctx.lineTo(newPos.x, newPos.y);
+      if (isEraser) {
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.lineWidth = penSize * 2;
+      } else {
+        ctx.globalCompositeOperation = "source-over";
+        ctx.strokeStyle = penColor;
+        ctx.lineWidth = penSize;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+      }
+      ctx.stroke();
+      lastPositionRef.current = newPos;
+    },
+    [isEraser, penColor, penSize]
+  );
+
+  const stopDrawing = useCallback(() => {
+    if (!isDrawingRef.current) return;
+    isDrawingRef.current = false;
+    saveToHistory();
+    const dataUrl = canvasRef.current.toDataURL("image/png");
+    onUpdate(note._id, { canvasImage: dataUrl });
+  }, [note, onUpdate, saveToHistory]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !isDrawingMode) return;
+    canvas.addEventListener("mousedown", startDrawing);
+    canvas.addEventListener("mousemove", draw);
+    canvas.addEventListener("mouseup", stopDrawing);
+    canvas.addEventListener("mouseout", stopDrawing);
+    canvas.addEventListener("touchstart", startDrawing, { passive: false });
+    canvas.addEventListener("touchmove", draw, { passive: false });
+    canvas.addEventListener("touchend", stopDrawing);
+    return () => {
+      canvas.removeEventListener("mousedown", startDrawing);
+      canvas.removeEventListener("mousemove", draw);
+      canvas.removeEventListener("mouseup", stopDrawing);
+      canvas.removeEventListener("mouseout", stopDrawing);
+      canvas.removeEventListener("touchstart", startDrawing);
+      canvas.removeEventListener("touchmove", draw);
+      canvas.removeEventListener("touchend", stopDrawing);
+    };
+  }, [isDrawingMode, startDrawing, draw, stopDrawing]);
+
+  // --- (Keep all your existing CustomEditor, handlers, renderElement, etc.) ---
+  // ...
   const CustomEditor = useMemo(
     () => ({
       isMarkActive(editorInstance, format) {
@@ -760,7 +781,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         ReactEditor.focus(editorInstance);
       },
     }),
-    [] // CustomEditor methods don't depend on NoteEditor state directly, they operate on the passed editor instance.
+    []
   );
 
   const toggleFullscreen = useCallback(
@@ -776,18 +797,65 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       }
     },
     [fullscreenMedia]
-  ); // Depends on fullscreenMedia state
+  );
 
   const formatFileSize = useCallback((bytes) => {
     if (bytes < 1024) return bytes + " bytes";
     else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
     else return (bytes / 1048576).toFixed(1) + " MB";
-  }, []); // No dependencies from component scope
+  }, []);
+
+  function DrawingElement({ element, attributes, children, onEditDrawing }) {
+    const [editing, setEditing] = useState(false);
+    return (
+      <div {...attributes} contentEditable={false} style={{ margin: "1em 0" }}>
+        {editing ? (
+          <Canvas
+            value={element.dataUrl}
+            onChange={(dataUrl) => {
+              onEditDrawing(dataUrl);
+              setEditing(false);
+            }}
+            width={600}
+            height={300}
+          />
+        ) : (
+          <div onClick={() => setEditing(true)} style={{ cursor: "pointer" }}>
+            <img
+              src={element.dataUrl}
+              alt="Drawing"
+              style={{ width: "100%", maxWidth: 600, borderRadius: 8 }}
+            />
+            <div style={{ textAlign: "center", color: "#888" }}>
+              Click to edit drawing
+            </div>
+          </div>
+        )}
+        {children}
+      </div>
+    );
+  }
 
   const renderElement = useCallback(
-    ({ attributes, children, element }) => {
+    (props) => {
+      const { element, attributes, children } = props;
       const style = element.align ? { textAlign: element.align } : {};
       switch (element.type) {
+        case "drawing":
+          return (
+            <DrawingElement
+              element={element}
+              attributes={attributes}
+              children={children}
+              onEditDrawing={(newDataUrl) => {
+                Transforms.setNodes(
+                  editor,
+                  { dataUrl: newDataUrl },
+                  { at: ReactEditor.findPath(editor, element) }
+                );
+              }}
+            />
+          );
         case "heading-one":
           return (
             <h1 {...attributes} style={style}>
@@ -910,8 +978,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
                   autoPlay={false}
                   key={element.url}
                   onLoadedData={(e) => {
-                    const video = e.target;
-                    video.pause();
+                    e.target.pause();
                   }}
                   onClick={(e) => {
                     if (isVideoFullscreen) e.stopPropagation();
@@ -977,13 +1044,14 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       }
     },
     [
+      editor,
       fullscreenMedia,
       toggleFullscreen,
       formatFileSize,
       setCurrentFileUrl,
       setCurrentFileName,
       setIsFileSidebarOpen,
-    ] // Added dependencies
+    ]
   );
 
   const renderLeaf = useCallback(({ attributes, children, leaf }) => {
@@ -1005,93 +1073,37 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   }, []);
 
   const insertMedia = useCallback((editorInstance, mediaProps) => {
-    const { type, ...props } = mediaProps;
-    const mediaElement = { type, ...props, children: [{ text: "" }] };
-
-    // If selection is at the end of a non-empty paragraph, insert media on new line
-    // Otherwise, insert at selection, splitting current block if necessary
-    const { selection } = editorInstance;
-    if (selection) {
-      const [match] = Editor.nodes(editorInstance, {
-        match: (n) =>
-          SlateElement.isElement(n) && Editor.isBlock(editorInstance, n),
-        mode: "lowest",
-      });
-
-      if (match) {
-        const [currentNode, currentPath] = match;
-        // If current block is empty or cursor at end of non-empty block, insert after
-        if (
-          Editor.isEmpty(editorInstance, currentNode) ||
-          Editor.isEnd(editorInstance, selection.anchor, currentPath)
-        ) {
-          Transforms.insertNodes(editorInstance, mediaElement, {
-            at: Path.next(currentPath),
-          });
-          Transforms.insertNodes(
-            editorInstance,
-            { type: "paragraph", children: [{ text: "" }] },
-            { at: Path.next(Path.next(currentPath)), select: true }
-          );
-        } else {
-          // Insert at selection, splitting the block
-          Transforms.insertNodes(editorInstance, mediaElement);
-          Transforms.insertNodes(
-            editorInstance,
-            { type: "paragraph", children: [{ text: "" }] },
-            { select: true }
-          );
-        }
-      } else {
-        // Should not happen in a valid editor state
-        Transforms.insertNodes(editorInstance, mediaElement);
-        Transforms.insertNodes(
-          editorInstance,
-          { type: "paragraph", children: [{ text: "" }] },
-          { select: true }
-        );
-      }
-    } else {
-      // No selection, append to end
-      Transforms.insertNodes(editorInstance, mediaElement, {
-        at: [editorInstance.children.length],
-      });
-      Transforms.insertNodes(
-        editorInstance,
-        { type: "paragraph", children: [{ text: "" }] },
-        { at: [editorInstance.children.length], select: true }
-      );
-    }
+    const mediaElement = { ...mediaProps, children: [{ text: "" }] };
+    Transforms.insertNodes(editorInstance, mediaElement);
+    Transforms.insertNodes(
+      editorInstance,
+      { type: "paragraph", children: [{ text: "" }] },
+      { select: true }
+    );
     ReactEditor.focus(editorInstance);
   }, []);
 
   const insertImage = useCallback(
-    (editorInstance, url, alt = "") => {
-      insertMedia(editorInstance, { type: "image", url, alt });
-    },
+    (editorInstance, url, alt = "") =>
+      insertMedia(editorInstance, { type: "image", url, alt }),
     [insertMedia]
   );
-
   const insertVideo = useCallback(
-    (editorInstance, url, poster = null) => {
-      insertMedia(editorInstance, { type: "video", url, poster });
-    },
+    (editorInstance, url, poster = null) =>
+      insertMedia(editorInstance, { type: "video", url, poster }),
     [insertMedia]
   );
-
   const insertFile = useCallback(
-    (editorInstance, url, filename, size, contentType) => {
+    (editorInstance, url, filename, size, contentType) =>
       insertMedia(editorInstance, {
         type: "file",
         url,
         filename,
         size,
         contentType,
-      });
-    },
+      }),
     [insertMedia]
   );
-
   const insertLink = useCallback((editorInstance, url) => {
     if (!url) return;
     const { selection } = editorInstance;
@@ -1152,10 +1164,6 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         if (url) insertLink(editor, url);
         return;
       }
-      if (formatType === "media") {
-        openMediaDialog(value);
-        return;
-      }
       if (["image", "video", "file"].includes(formatType)) {
         openMediaDialog(formatType);
         return;
@@ -1199,11 +1207,10 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       }
     },
     [editor, CustomEditor, insertLink]
-  ); // Added insertLink
+  );
 
   const HOTKEYS = useMemo(
     () => ({
-      // Memoize HOTKEYS object
       "mod+b": "bold",
       "mod+i": "italic",
       "mod+u": "underline",
@@ -1222,17 +1229,13 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           return;
         }
       }
-      // Add specific handling for Enter key after void blocks if needed,
-      // though withMedia's normalizeNode and insertBreak should handle most cases.
     },
     [editor, CustomEditor, HOTKEYS]
-  ); // Added HOTKEYS
+  );
 
   const handleSlateChange = useCallback(
     (newValue) => {
-      setSlateValue(newValue); // Main state update
-
-      // Handle selection toolbar positioning
+      setSlateValue(newValue);
       const { selection } = editor;
       if (selection && Range.isExpanded(selection)) {
         try {
@@ -1256,17 +1259,11 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         setSelectionPosition(null);
         setSelectedText("");
       }
-      // Removed the explicit scroll restoration from here.
-      // Slate and the browser should handle keeping the cursor in view during typing.
-      // If scroll jumps persist, they are more likely due to layout shifts from re-renders
-      // or CSS, rather than needing manual correction on every change.
     },
     [editor]
-  ); // Removed scroll restoration logic from here
+  );
 
-  // ... (rest of your AI handlers, modal handlers, etc.)
-  // Ensure all other handlers that interact with the editor or its state are also memoized if necessary.
-
+  // ... (Keep all your AI/Modal handlers)
   const handleAISubmit = async (prompt) => {
     setIsLoading(true);
     setAIResponse("");
@@ -1274,7 +1271,6 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       const response = await generateContent(prompt);
       setAIResponse(response);
       if (response) {
-        // Insert AI response at current selection or end of document
         if (editor.selection) {
           Transforms.insertText(editor, response);
         } else {
@@ -1384,57 +1380,62 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   return (
     <div className={`editor-container ${!isSidebarOpen ? "full-width" : ""}`}>
       <EditorHeader onCreate={onCreate} />
-      <div className="editor-content-wrapper">
-        {canvasMode ? (
-          <>
-            {/* Canvas Toolbar and Canvas */}
-            <Canvas
-              value={note.canvasImage}
-              onChange={(img) =>
-                onUpdate(note._id, { ...note, canvasImage: img })
-              }
-              noteId={note._id}
-              onSwitchToNotes={() => setCanvasMode(false)}
-            />
-          </>
-        ) : (
-          <>
-            {/* Normal Editor Toolbar and Editor */}
-            <EditorToolbar
-              editor={editor}
-              onFormatText={handleFormatText}
-              onToggleCanvas={() => setCanvasMode(true)}
-              canvasMode={canvasMode}
-            />
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="editor-title"
-              placeholder="Note title..."
-            />
-            <Slate
-              editor={editor}
-              initialValue={initialValue} // Use initialValue for initial setup
-              value={slateValue} // Controlled component with slateValue
-              onChange={handleSlateChange}
-              // FIX 1: Correct the key to prevent re-initialization on every render
-              key={note?._id || "new-note"}
-            >
-              <Editable
-                className="editor-content rich-editor"
-                renderElement={renderElement}
-                renderLeaf={renderLeaf}
-                placeholder="Start typing your note..."
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-                data-gramm="false" // Consider data-gramm_editor="false" if Grammarly is an issue
-                onKeyDown={handleKeyDown}
-              />
-            </Slate>
-          </>
-        )}
+      <EditorToolbar
+        editor={editor}
+        onFormatText={handleFormatText}
+        onInsertMedia={handleMediaInsert}
+        isDrawingMode={isDrawingMode}
+        onToggleDrawingMode={() => setIsDrawingMode((prev) => !prev)}
+        penColor={penColor}
+        onSetPenColor={setPenColor}
+        penSize={penSize}
+        onSetPenSize={setPenSize}
+        isEraser={isEraser}
+        onSetIsEraser={setIsEraser}
+        onUndoDrawing={handleUndoDrawing}
+        onRedoDrawing={handleRedoDrawing}
+        onResetDrawing={handleResetDrawing}
+      />
+      <div className="editor-content-wrapper" ref={editorWrapperRef}>
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="editor-title"
+          placeholder="Note title..."
+          style={{ pointerEvents: isDrawingMode ? "none" : "auto" }}
+        />
+        <Slate
+          editor={editor}
+          initialValue={initialValue}
+          value={slateValue}
+          onChange={handleSlateChange}
+          key={note?._id || "new-note"}
+        >
+          <Editable
+            className="editor-content rich-editor"
+            renderElement={renderElement}
+            renderLeaf={renderLeaf}
+            placeholder="Start typing your note..."
+            autoCapitalize="off"
+            autoCorrect="off"
+            spellCheck={false}
+            data-gramm="false"
+            onKeyDown={handleKeyDown}
+            style={{ pointerEvents: isDrawingMode ? "none" : "auto" }}
+          />
+        </Slate>
+        <canvas
+          ref={canvasRef}
+          className="drawing-canvas"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            pointerEvents: isDrawingMode ? "auto" : "none",
+            zIndex: 10,
+          }}
+        />
       </div>
       <AIAssistant
         onActivateText={handleActivateText}

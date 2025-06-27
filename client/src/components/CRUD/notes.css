@@ -898,7 +898,7 @@ button:disabled {
   }
 
   .notes-sidebar.closed {
-    transform: translateX(-100%) !important; 
+    transform: translateX(-100%) !important;
   }
 
   /* When sidebar is open, hide the editor part */
@@ -962,4 +962,9 @@ button:disabled {
   .file-container {
     max-width: calc(100vw - 3rem);
   }
+}
+
+.drawing-canvas {
+  /* Prevents default touch actions like scrolling or zooming when drawing on touch devices */
+  touch-action: none;
 }

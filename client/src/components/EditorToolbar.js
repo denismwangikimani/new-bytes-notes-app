@@ -27,13 +27,73 @@ import {
 import "./EditorToolbar.css";
 import MediaDialog from "./MediaDialog";
 
+// A simplified toolbar for canvas controls
+const CanvasToolbar = ({
+  onUndo,
+  onRedo,
+  onReset,
+  onEraser,
+  onPenSize,
+  isEraser,
+  penSize,
+}) => (
+  <div
+    className="canvas-toolbar-scroll"
+    style={{ display: "flex", alignItems: "center", gap: 8 }}
+  >
+    <button className="toolbar-button" onClick={onUndo}>
+      Undo
+    </button>
+    <button className="toolbar-button" onClick={onRedo}>
+      Redo
+    </button>
+    <button className="toolbar-button" onClick={onReset}>
+      Clear
+    </button>
+    <button
+      className={`toolbar-button ${isEraser ? "active" : ""}`}
+      onClick={onEraser}
+      title={isEraser ? "Switch to Pen" : "Switch to Eraser"}
+    >
+      Eraser
+    </button>
+    <label
+      style={{
+        marginLeft: 8,
+        display: "flex",
+        alignItems: "center",
+        gap: "4px",
+        color: "#6b7280",
+      }}
+    >
+      Size:
+      <input
+        type="range"
+        min={1}
+        max={20}
+        value={penSize}
+        onChange={(e) => onPenSize(Number(e.target.value))}
+        style={{ verticalAlign: "middle" }}
+      />
+    </label>
+  </div>
+);
+
 const EditorToolbar = ({
   onFormatText,
   editor,
-  savedStatus,
   onInsertMedia,
-  canvasMode = false, // Add default value if not provided
-  onToggleCanvas = () => {}, // Add default no-op function if not provided
+  isDrawingMode,
+  onToggleDrawingMode,
+  penColor,
+  onSetPenColor,
+  penSize,
+  onSetPenSize,
+  isEraser,
+  onSetIsEraser,
+  onUndoDrawing,
+  onRedoDrawing,
+  onResetDrawing,
 }) => {
   const [showAllTools, setShowAllTools] = useState(false);
   const [showFontFamilyMenu, setShowFontFamilyMenu] = useState(false);
@@ -41,16 +101,11 @@ const EditorToolbar = ({
   const [showHeadingMenu, setShowHeadingMenu] = useState(false);
   const [textColor, setTextColor] = useState("#000000");
   const [bgColor, setBgColor] = useState("#ffffff");
-
-  // State for keyboard visibility
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [viewportHeight, setViewportHeight] = useState(window.innerHeight);
-
-  // State for media dialog
   const [showMediaDialog, setShowMediaDialog] = useState(false);
-  const [mediaType, setMediaType] = useState(null); // 'image', 'video', 'link', or 'file'
+  const [mediaType, setMediaType] = useState(null);
 
-  // Refs for dropdowns and their toggle buttons
   const fontFamilyMenuRef = useRef(null);
   const fontFamilyButtonRef = useRef(null);
   const fontSizeMenuRef = useRef(null);
@@ -58,7 +113,6 @@ const EditorToolbar = ({
   const headingMenuRef = useRef(null);
   const headingButtonRef = useRef(null);
 
-  // Font families and sizes (existing code)
   const fontFamilies = [
     { name: "Arial", value: "Arial, sans-serif" },
     { name: "Times New Roman", value: '"Times New Roman", Times, serif' },
@@ -75,72 +129,51 @@ const EditorToolbar = ({
     { name: "X-Large", value: "32px" },
   ];
 
-  // Close dropdowns when clicking outside
+  const handlePenIconClick = () => {
+    onToggleDrawingMode();
+  };
+
   useEffect(() => {
     const handleClickOutside = (event) => {
-      // Close font family menu if click is outside
       if (
         showFontFamilyMenu &&
         fontFamilyMenuRef.current &&
-        fontFamilyButtonRef.current &&
         !fontFamilyMenuRef.current.contains(event.target) &&
         !fontFamilyButtonRef.current.contains(event.target)
-      ) {
+      )
         setShowFontFamilyMenu(false);
-      }
-
-      // Close font size menu if click is outside
       if (
         showFontSizeMenu &&
         fontSizeMenuRef.current &&
-        fontSizeButtonRef.current &&
         !fontSizeMenuRef.current.contains(event.target) &&
         !fontSizeButtonRef.current.contains(event.target)
-      ) {
+      )
         setShowFontSizeMenu(false);
-      }
-
-      // Close heading menu if click is outside
       if (
         showHeadingMenu &&
         headingMenuRef.current &&
-        headingButtonRef.current &&
         !headingMenuRef.current.contains(event.target) &&
         !headingButtonRef.current.contains(event.target)
-      ) {
+      )
         setShowHeadingMenu(false);
-      }
     };
-
     document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showFontFamilyMenu, showFontSizeMenu, showHeadingMenu]);
 
   const handleFormat = (formatType, value = null) => {
-    // Handle media insertion differently
     if (["image", "video", "link", "file"].includes(formatType)) {
       setMediaType(formatType);
       setShowMediaDialog(true);
       return;
     }
-
     onFormatText(formatType, value);
-    // Close menus after selection (existing code)
-    if (formatType === "fontFamily") {
-      setShowFontFamilyMenu(false);
-    }
-    if (formatType === "fontSize") {
-      setShowFontSizeMenu(false);
-    }
-    if (formatType.startsWith("heading")) {
-      setShowHeadingMenu(false);
-    }
+    if (formatType === "fontFamily") setShowFontFamilyMenu(false);
+    if (formatType === "fontSize") setShowFontSizeMenu(false);
+    if (formatType.startsWith("heading")) setShowHeadingMenu(false);
   };
 
   const handleColorChange = (type, color) => {
-    // Existing code
     if (type === "text") {
       setTextColor(color);
       onFormatText("textColor", color);
@@ -150,16 +183,11 @@ const EditorToolbar = ({
     }
   };
 
-  // Detect keyboard on mobile touch devices only
   useEffect(() => {
-    // Only run this on touch screens
     const isTouchDevice =
       "ontouchstart" in window || navigator.maxTouchPoints > 0;
-
     const detectKeyboard = () => {
       if (!isTouchDevice) return;
-
-      // If the viewport height decreased significantly, keyboard is likely visible
       const newViewportHeight = window.innerHeight;
       if (viewportHeight - newViewportHeight > 150) {
         setIsKeyboardVisible(true);
@@ -168,28 +196,14 @@ const EditorToolbar = ({
       }
       setViewportHeight(newViewportHeight);
     };
-
     if (isTouchDevice) {
       window.addEventListener("resize", detectKeyboard);
       return () => window.removeEventListener("resize", detectKeyboard);
     }
   }, [viewportHeight]);
 
-  // Primary tools definition with separate font family and font size
   const primaryTools = (
     <>
-      {/* Bold, Italic, Underline buttons */}
-      <button
-        className={`toolbar-button ${canvasMode ? "active" : ""}`}
-        onClick={onToggleCanvas}
-        title="Switch to Canvas Mode"
-      >
-        {/* Use a drawing/pen icon here */}
-        <svg width="18" height="18" fill="none" stroke="currentColor">
-          <path d="M2 16.5V21h4.5l13-13.1-4.5-4.5L2 16.5z"></path>
-        </svg>
-      </button>
-
       <button
         className="toolbar-button"
         onClick={() => handleFormat("bold")}
@@ -212,61 +226,18 @@ const EditorToolbar = ({
         <Underline size={18} />
       </button>
       <div className="toolbar-divider"></div>
-
-      {/* Font Family dropdown - Use BookText icon */}
       <div className="toolbar-dropdown">
         <button
           ref={fontFamilyButtonRef}
           className="toolbar-button dropdown-toggle"
-          onClick={(e) => {
-            e.stopPropagation();
-            console.log(
-              "Font Family button clicked, showing:",
-              !showFontFamilyMenu
-            );
-
-            // Toggle state first
-            const newState = !showFontFamilyMenu;
-            setShowFontFamilyMenu(newState);
-            setShowFontSizeMenu(false); // Close other menus
-            setShowHeadingMenu(false);
-
-            // Position the menu AFTER updating state
-            if (newState && fontFamilyButtonRef.current) {
-              const rect = fontFamilyButtonRef.current.getBoundingClientRect();
-
-              // Slight delay to ensure the menu exists in the DOM
-              setTimeout(() => {
-                if (fontFamilyMenuRef.current) {
-                  fontFamilyMenuRef.current.style.left = `${rect.left}px`;
-                  fontFamilyMenuRef.current.style.top = `${rect.top - 220}px`; // Position above button
-
-                  // Check if menu would go off screen at top
-                  const menuRect =
-                    fontFamilyMenuRef.current.getBoundingClientRect();
-                  if (menuRect.top < 10) {
-                    // Position below the button instead
-                    fontFamilyMenuRef.current.style.top = `${
-                      rect.bottom + 5
-                    }px`;
-                  }
-                }
-              }, 0);
-            }
-          }}
+          onClick={() => setShowFontFamilyMenu((s) => !s)}
           title="Font Family"
         >
-          <BookText size={18} /> {/* Using BookText for font family */}
+          <BookText size={18} />
           <ChevronDown size={14} />
         </button>
         {showFontFamilyMenu && (
-          <div
-            ref={fontFamilyMenuRef}
-            className="dropdown-menu"
-            style={{ border: "2px solid green" }}
-          >
-            {console.log("Rendering font family menu")}
-            {/* Font Family Section */}
+          <div ref={fontFamilyMenuRef} className="dropdown-menu">
             <div className="dropdown-section">
               <div className="dropdown-label">Font Family</div>
               {fontFamilies.map((font) => (
@@ -283,59 +254,18 @@ const EditorToolbar = ({
           </div>
         )}
       </div>
-
-      {/* Font Size dropdown - Keep Type icon */}
       <div className="toolbar-dropdown">
         <button
           ref={fontSizeButtonRef}
           className="toolbar-button dropdown-toggle"
-          onClick={(e) => {
-            e.stopPropagation();
-            console.log(
-              "Font Size button clicked, showing:",
-              !showFontSizeMenu
-            );
-
-            // Toggle state first
-            const newState = !showFontSizeMenu;
-            setShowFontSizeMenu(newState);
-            setShowFontFamilyMenu(false); // Close other menus
-            setShowHeadingMenu(false);
-
-            // Position the menu AFTER updating state
-            if (newState && fontSizeButtonRef.current) {
-              const rect = fontSizeButtonRef.current.getBoundingClientRect();
-
-              // Slight delay to ensure the menu exists in the DOM
-              setTimeout(() => {
-                if (fontSizeMenuRef.current) {
-                  fontSizeMenuRef.current.style.left = `${rect.left}px`;
-                  fontSizeMenuRef.current.style.top = `${rect.top - 180}px`; // Position above button
-
-                  // Check if menu would go off screen at top
-                  const menuRect =
-                    fontSizeMenuRef.current.getBoundingClientRect();
-                  if (menuRect.top < 10) {
-                    // Position below the button instead
-                    fontSizeMenuRef.current.style.top = `${rect.bottom + 5}px`;
-                  }
-                }
-              }, 0);
-            }
-          }}
+          onClick={() => setShowFontSizeMenu((s) => !s)}
           title="Font Size"
         >
-          <Type size={18} /> {/* Keep the Type icon for font size */}
+          <Type size={18} />
           <ChevronDown size={14} />
         </button>
         {showFontSizeMenu && (
-          <div
-            ref={fontSizeMenuRef}
-            className="dropdown-menu"
-            style={{ border: "2px solid blue" }}
-          >
-            {console.log("Rendering font size menu")}
-            {/* Font Size Section */}
+          <div ref={fontSizeMenuRef} className="dropdown-menu">
             <div className="dropdown-section">
               <div className="dropdown-label">Font Size</div>
               {fontSizes.map((size) => (
@@ -351,8 +281,7 @@ const EditorToolbar = ({
           </div>
         )}
       </div>
-
-      {/* Color pickers - No changes needed */}
+      <div className="toolbar-divider"></div>
       <div className="color-picker-container">
         <button
           className="toolbar-button color-button"
@@ -389,10 +318,23 @@ const EditorToolbar = ({
     </>
   );
 
-  // Secondary tools definition (modified heading dropdown part)
   const secondaryTools = (
     <>
-      {/* Alignment buttons */}
+      <button
+        className="toolbar-button"
+        onClick={() => handleFormat("strikethrough")}
+        title="Strikethrough"
+      >
+        <Strikethrough size={18} />
+      </button>
+      <button
+        className="toolbar-button"
+        onClick={() => handleFormat("code")}
+        title="Code"
+      >
+        <Code size={18} />
+      </button>
+      <div className="toolbar-divider"></div>
       <button
         className="toolbar-button"
         onClick={() => handleFormat("align", "left")}
@@ -417,16 +359,15 @@ const EditorToolbar = ({
       <button
         className="toolbar-button"
         onClick={() => handleFormat("align", "justify")}
-        title="Justify"
+        title="Align Justify"
       >
         <AlignJustify size={18} />
       </button>
       <div className="toolbar-divider"></div>
-      {/* List buttons */}
       <button
         className="toolbar-button"
         onClick={() => handleFormat("bulletList")}
-        title="Bullet List"
+        title="Bulleted List"
       >
         <List size={18} />
       </button>
@@ -436,90 +377,6 @@ const EditorToolbar = ({
         title="Numbered List"
       >
         <ListOrdered size={18} />
-      </button>
-      <div className="toolbar-divider"></div>
-      {/* Headings dropdown - ADDED ref and stopPropagation */}
-      <div className="toolbar-dropdown">
-        <button
-          ref={headingButtonRef} // Assign ref
-          className="toolbar-button dropdown-toggle"
-          onClick={(e) => {
-            e.stopPropagation(); // Prevent click from closing menu immediately
-
-            // Toggle state first
-            const newState = !showHeadingMenu;
-            setShowHeadingMenu(newState);
-            setShowFontFamilyMenu(false); // Close other menu
-            setShowFontSizeMenu(false); // Close other menu
-
-            // Position the menu AFTER updating state
-            if (newState && headingButtonRef.current) {
-              const rect = headingButtonRef.current.getBoundingClientRect();
-
-              // Slight delay to ensure the menu exists in the DOM
-              setTimeout(() => {
-                if (headingMenuRef.current) {
-                  headingMenuRef.current.style.left = `${rect.left}px`;
-                  headingMenuRef.current.style.top = `${rect.top - 150}px`; // Position above button
-
-                  // Check if menu would go off screen at top
-                  const menuRect =
-                    headingMenuRef.current.getBoundingClientRect();
-                  if (menuRect.top < 10) {
-                    // Position below the button instead
-                    headingMenuRef.current.style.top = `${rect.bottom + 5}px`;
-                  }
-                }
-              }, 0);
-            }
-          }}
-          title="Headings"
-        >
-          <Heading1 size={18} />
-          <ChevronDown size={14} />
-        </button>
-        {showHeadingMenu && (
-          <div
-            ref={headingMenuRef}
-            className="dropdown-menu heading-menu"
-            style={{ border: "2px solid blue" }}
-          >
-            {console.log("Rendering heading menu")} {/* Assign ref */}
-            <button
-              className="dropdown-item"
-              onClick={() => handleFormat("heading", "h1")}
-            >
-              <Heading1 size={16} /> Heading 1
-            </button>
-            <button
-              className="dropdown-item"
-              onClick={() => handleFormat("heading", "h2")}
-            >
-              <Heading2 size={16} /> Heading 2
-            </button>
-            <button
-              className="dropdown-item"
-              onClick={() => handleFormat("heading", "h3")}
-            >
-              <Heading3 size={16} /> Heading 3
-            </button>
-          </div>
-        )}
-      </div>
-      {/* Strikethrough, Code, Quote buttons */}
-      <button
-        className="toolbar-button"
-        onClick={() => handleFormat("strikethrough")}
-        title="Strikethrough"
-      >
-        <Strikethrough size={18} />
-      </button>
-      <button
-        className="toolbar-button"
-        onClick={() => handleFormat("code")}
-        title="Code"
-      >
-        <Code size={18} />
       </button>
       <button
         className="toolbar-button"
@@ -531,34 +388,110 @@ const EditorToolbar = ({
       <div className="toolbar-divider"></div>
       <button
         className="toolbar-button"
-        onClick={() => onFormatText("media", "image")}
+        onClick={() => handleFormat("image")}
         title="Insert Image"
       >
         <Image size={18} />
       </button>
       <button
         className="toolbar-button"
-        onClick={() => onFormatText("media", "video")}
+        onClick={() => handleFormat("video")}
         title="Insert Video"
       >
         <Video size={18} />
       </button>
       <button
         className="toolbar-button"
-        onClick={() => onFormatText("link")}
+        onClick={() => handleFormat("link")}
         title="Insert Link"
       >
         <Link size={18} />
       </button>
       <button
         className="toolbar-button"
-        onClick={() => onFormatText("media", "file")}
+        onClick={() => handleFormat("file")}
         title="Insert File"
       >
         <FileText size={18} />
       </button>
+    </>
+  );
 
-      {showMediaDialog && (
+  return (
+    <div
+      className={`editor-toolbar ${
+        isKeyboardVisible ? "keyboard-visible" : ""
+      }`}
+    >
+      <div className="toolbar-inner">
+        <button
+          className={`toolbar-button${isDrawingMode ? " active" : ""}`}
+          onClick={handlePenIconClick}
+          title={isDrawingMode ? "Switch to Typing" : "Switch to Drawing"}
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+          </svg>
+        </button>
+        <div className="toolbar-divider"></div>
+
+        {isDrawingMode ? (
+          <>
+            <CanvasToolbar
+              onUndo={onUndoDrawing}
+              onRedo={onRedoDrawing}
+              onReset={onResetDrawing}
+              onEraser={() => onSetIsEraser((e) => !e)}
+              onPenSize={onSetPenSize}
+              isEraser={isEraser}
+              penSize={penSize}
+            />
+            <div className="color-picker-container">
+              <button
+                className="toolbar-button color-button"
+                title="Pen Color"
+                style={{ borderBottom: `3px solid ${penColor}` }}
+              >
+                <input
+                  type="color"
+                  value={penColor}
+                  onChange={(e) => onSetPenColor(e.target.value)}
+                  className="color-input"
+                />
+                <span className="color-label" style={{ color: penColor }}>
+                  Pen
+                </span>
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {primaryTools}
+            <div
+              className={`secondary-tools ${showAllTools ? "expanded" : ""}`}
+            >
+              {secondaryTools}
+            </div>
+            <button
+              className="toolbar-button more-button"
+              onClick={() => setShowAllTools(!showAllTools)}
+              title={showAllTools ? "Show Less" : "Show More"}
+            >
+              <MoreHorizontal size={18} />
+            </button>
+          </>
+        )}
+      </div>
+      {!isDrawingMode && showMediaDialog && (
         <MediaDialog
           type={mediaType}
           isOpen={showMediaDialog}
@@ -569,29 +502,6 @@ const EditorToolbar = ({
           }}
         />
       )}
-    </>
-  );
-
-  // Main return statement - unchanged
-  return (
-    <div
-      className={`editor-toolbar ${
-        isKeyboardVisible ? "keyboard-visible" : ""
-      }`}
-    >
-      <div className="toolbar-inner">
-        {primaryTools}
-        <div className={`secondary-tools ${showAllTools ? "expanded" : ""}`}>
-          {secondaryTools}
-        </div>
-        <button
-          className="toolbar-button more-button"
-          onClick={() => setShowAllTools(!showAllTools)}
-          title={showAllTools ? "Show Less" : "Show More"}
-        >
-          <MoreHorizontal size={18} />
-        </button>
-      </div>
     </div>
   );
 };
