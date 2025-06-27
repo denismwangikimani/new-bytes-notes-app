@@ -6,7 +6,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import { FileIcon, Maximize, Minimize } from "lucide-react";
+import { FileIcon, Maximize, Minimize, X } from "lucide-react";
 import DOMPurify from "dompurify";
 import MediaDialog from "../MediaDialog";
 import EditorHeader from "./EditorHeader";
@@ -18,6 +18,7 @@ import TextSelectionToolbar from "../TextSelectionToolbar";
 import TextPreviewModal from "../TextPreviewModal";
 import EditorToolbar from "../EditorToolbar";
 import { generateContent, transformText } from "../../services/geminiService";
+import { sendCanvasToGemini } from "../../services/canvasGeminiService";
 import FlashcardModal from "../FlashcardModal";
 import FileSidebar from "./FileSidebar";
 import Canvas from "../canvas/Canvas"; // Keep for DrawingElement
@@ -477,6 +478,10 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [penSize, setPenSize] = useState(3);
   const [isEraser, setIsEraser] = useState(false);
   const [isCanvasDirty, setIsCanvasDirty] = useState(false);
+  const [penType, setPenType] = useState("ballpoint");
+  const [shape, setShape] = useState("pen");
+  const [calculationResult, setCalculationResult] = useState(null);
+  const [isCalculating, setIsCalculating] = useState(false);
 
   // --- Refs for canvas and drawing ---
   const canvasRef = useRef(null);
@@ -485,6 +490,8 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const lastPositionRef = useRef({ x: 0, y: 0 });
   const drawingHistory = useRef([]);
   const historyIndex = useRef(-1);
+  const shapeStartPointRef = useRef(null);
+  const canvasSnapshotBeforeShapeRef = useRef(null);
 
   const editor = useMemo(() => {
     const e = withMedia(withHistory(withReact(createEditor())));
@@ -518,7 +525,9 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
   useEffect(() => {
     updateTimeoutRef.current = setTimeout(() => {
-      const contentChanged = note ? serialize(slateValue) !== note.content : false;
+      const contentChanged = note
+        ? serialize(slateValue) !== note.content
+        : false;
       const titleChanged = note ? title !== note.title : false;
 
       if (note && (contentChanged || titleChanged || isCanvasDirty)) {
@@ -553,6 +562,95 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   }, [slateValue, title, note, onUpdate, editor, isCanvasDirty]);
 
   // --- Drawing Logic ---
+  const hexToRgba = (hex, alpha) => {
+    if (!hex.startsWith("#")) return hex;
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+
+  const drawShapeOnCanvas = useCallback(
+    (ctx, start, end, color, size, shapeType) => {
+      ctx.strokeStyle =
+        penType === "highlighter" ? hexToRgba(color, 0.4) : color;
+      ctx.lineWidth = penType === "highlighter" ? size * 4 : size;
+      ctx.beginPath();
+      switch (shapeType) {
+        case "rect":
+          ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
+          break;
+        case "circle": {
+          const radius = Math.sqrt(
+            Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2)
+          );
+          ctx.arc(start.x, start.y, radius, 0, 2 * Math.PI);
+          ctx.stroke();
+          break;
+        }
+        case "line":
+          ctx.moveTo(start.x, start.y);
+          ctx.lineTo(end.x, end.y);
+          ctx.stroke();
+          break;
+        case "triangle":
+          ctx.moveTo(start.x, end.y);
+          ctx.lineTo((start.x + end.x) / 2, start.y);
+          ctx.lineTo(end.x, end.y);
+          ctx.closePath();
+          ctx.stroke();
+          break;
+        default:
+          break;
+      }
+    },
+    [penType]
+  );
+
+  const handleCalculate = async () => {
+    if (!canvasRef.current || isCalculating) return;
+    setIsCalculating(true);
+    setCalculationResult("Loading...");
+    try {
+      const dataUrl = canvasRef.current.toDataURL("image/png");
+      const answer = await sendCanvasToGemini(dataUrl, note?._id);
+      setCalculationResult(answer);
+    } catch (error) {
+      console.error("Calculation error:", error);
+      setCalculationResult("Error: Could not get a result.");
+    } finally {
+      setIsCalculating(false);
+    }
+  };
+
+  const formatResult = (result) => {
+    if (!result) return "";
+    try {
+      let arr = result;
+      if (typeof result === "string") {
+        // Attempt to fix common JSON issues from AI before parsing
+        const correctedString = result
+          .replace(/'/g, '"')
+          .replace(/(\w+):/g, '"$1":');
+        arr = JSON.parse(correctedString);
+      }
+      if (Array.isArray(arr)) {
+        return arr
+          .map((item) => {
+            if (item.expr && item.result !== undefined) {
+              return `${item.expr.replace(/\s+/g, "")}=${item.result}`;
+            }
+            return JSON.stringify(item);
+          })
+          .filter(Boolean)
+          .join("\n");
+      }
+      return result;
+    } catch (e) {
+      return result; // Return as is if parsing fails
+    }
+  };
+
   const saveToHistory = useCallback(() => {
     if (!canvasRef.current) return;
     const dataUrl = canvasRef.current.toDataURL("image/png");
@@ -625,7 +723,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     resizeObserver.observe(wrapper);
 
     canvas.width = wrapper.scrollWidth;
-   canvas.height = wrapper.scrollHeight;
+    canvas.height = wrapper.scrollHeight;
     const ctx = canvas.getContext("2d");
     if (note?.canvasImage) {
       drawImageOnCanvas(note.canvasImage, ctx);
@@ -649,62 +747,133 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     return { x: clientX - rect.left, y: clientY - rect.top };
   };
 
-  const startDrawing = useCallback((e) => {
-    isDrawingRef.current = true;
-    lastPositionRef.current = getCoords(e);
-  }, []);
+  const startDrawing = useCallback(
+    (e) => {
+      e.preventDefault();
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      saveToHistory();
+
+      isDrawingRef.current = true;
+      const coords = getCoords(e);
+      const ctx = canvas.getContext("2d");
+
+      if (shape !== "pen") {
+        shapeStartPointRef.current = coords;
+        canvasSnapshotBeforeShapeRef.current = canvas.toDataURL();
+      } else {
+        lastPositionRef.current = coords;
+        ctx.beginPath();
+        ctx.moveTo(coords.x, coords.y);
+      }
+    },
+    [shape, saveToHistory]
+  );
 
   const draw = useCallback(
     (e) => {
       if (!isDrawingRef.current) return;
       e.preventDefault();
+
       const canvas = canvasRef.current;
       const ctx = canvas.getContext("2d");
       const newPos = getCoords(e);
-      ctx.beginPath();
-      ctx.moveTo(lastPositionRef.current.x, lastPositionRef.current.y);
+
+      if (shape !== "pen" && shapeStartPointRef.current) {
+        const img = new Image();
+        img.onload = () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+          drawShapeOnCanvas(
+            ctx,
+            shapeStartPointRef.current,
+            newPos,
+            penColor,
+            penSize,
+            shape
+          );
+        };
+        img.src = canvasSnapshotBeforeShapeRef.current;
+        return;
+      }
+
       ctx.lineTo(newPos.x, newPos.y);
+      ctx.globalCompositeOperation = isEraser
+        ? "destination-out"
+        : "source-over";
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
       if (isEraser) {
-        ctx.globalCompositeOperation = "destination-out";
         ctx.lineWidth = penSize * 2;
       } else {
-        ctx.globalCompositeOperation = "source-over";
-        ctx.strokeStyle = penColor;
-        ctx.lineWidth = penSize;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
+        const pressure =
+          e.pressure !== undefined && e.pressure > 0 ? e.pressure : 0.5;
+        ctx.setLineDash([]);
+
+        switch (penType) {
+          case "highlighter":
+            ctx.strokeStyle = hexToRgba(penColor, 0.4);
+            ctx.lineWidth = penSize * 4;
+            break;
+          case "fountain":
+            ctx.lineWidth = penSize * pressure * 1.5;
+            ctx.strokeStyle = penColor;
+            break;
+          case "brush":
+            ctx.lineWidth = penSize * pressure * 3;
+            ctx.strokeStyle = penColor;
+            break;
+          case "pencil":
+            ctx.strokeStyle = hexToRgba(penColor, 0.7);
+            ctx.lineWidth = penSize * pressure;
+            break;
+          case "ballpoint":
+          default:
+            ctx.lineWidth = penSize;
+            ctx.strokeStyle = penColor;
+            break;
+        }
       }
       ctx.stroke();
       lastPositionRef.current = newPos;
+      ctx.beginPath();
+      ctx.moveTo(newPos.x, newPos.y);
     },
-    [isEraser, penColor, penSize]
+    [isEraser, penColor, penSize, penType, shape, drawShapeOnCanvas]
   );
 
   const stopDrawing = useCallback(() => {
     if (!isDrawingRef.current) return;
+    const ctx = canvasRef.current.getContext("2d");
+    ctx.closePath();
     isDrawingRef.current = false;
-    saveToHistory();
+    shapeStartPointRef.current = null;
+    canvasSnapshotBeforeShapeRef.current = null;
     setIsCanvasDirty(true);
-  }, [saveToHistory]);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !isDrawingMode) return;
-    canvas.addEventListener("mousedown", startDrawing);
-    canvas.addEventListener("mousemove", draw);
-    canvas.addEventListener("mouseup", stopDrawing);
-    canvas.addEventListener("mouseout", stopDrawing);
-    canvas.addEventListener("touchstart", startDrawing, { passive: false });
-    canvas.addEventListener("touchmove", draw, { passive: false });
-    canvas.addEventListener("touchend", stopDrawing);
+
+    const preventDefault = (e) => e.preventDefault();
+    document.body.addEventListener("touchmove", preventDefault, {
+      passive: false,
+    });
+
+    canvas.addEventListener("pointerdown", startDrawing);
+    canvas.addEventListener("pointermove", draw);
+    canvas.addEventListener("pointerup", stopDrawing);
+    canvas.addEventListener("pointerleave", stopDrawing);
+
     return () => {
-      canvas.removeEventListener("mousedown", startDrawing);
-      canvas.removeEventListener("mousemove", draw);
-      canvas.removeEventListener("mouseup", stopDrawing);
-      canvas.removeEventListener("mouseout", stopDrawing);
-      canvas.removeEventListener("touchstart", startDrawing);
-      canvas.removeEventListener("touchmove", draw);
-      canvas.removeEventListener("touchend", stopDrawing);
+      document.body.removeEventListener("touchmove", preventDefault);
+      canvas.removeEventListener("pointerdown", startDrawing);
+      canvas.removeEventListener("pointermove", draw);
+      canvas.removeEventListener("pointerup", stopDrawing);
+      canvas.removeEventListener("pointerleave", stopDrawing);
     };
   }, [isDrawingMode, startDrawing, draw, stopDrawing]);
 
@@ -1407,6 +1576,11 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         onUndoDrawing={handleUndoDrawing}
         onRedoDrawing={handleRedoDrawing}
         onResetDrawing={handleResetDrawing}
+        penType={penType}
+        onSetPenType={setPenType}
+        shape={shape}
+        onSetShape={setShape}
+        onCalculate={handleCalculate}
       />
       <div className="editor-content-wrapper" ref={editorWrapperRef}>
         <input
@@ -1504,6 +1678,23 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         fileUrl={currentFileUrl}
         fileName={currentFileName}
       />
+      {calculationResult && (
+        <div className="canvas-result-sticky">
+          <div style={{ flex: 1 }}>
+            <strong>Result:</strong>
+            <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+              {isCalculating ? "Loading..." : formatResult(calculationResult)}
+            </pre>
+          </div>
+          <button
+            onClick={() => setCalculationResult(null)}
+            className="close-btn"
+            title="Close"
+          >
+            <X size={18} />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

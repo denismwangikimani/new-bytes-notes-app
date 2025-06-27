@@ -968,3 +968,49 @@ button:disabled {
   /* Prevents default touch actions like scrolling or zooming when drawing on touch devices */
   touch-action: none;
 }
+
+.canvas-result-sticky {
+  position: fixed;
+  left: 50%;
+  bottom: 80px; /* Position above the toolbar */
+  transform: translateX(-50%);
+  z-index: 100;
+  background: #18181b;
+  color: #fff;
+  border: 2px solid #fff;
+  border-radius: 8px;
+  min-width: 320px;
+  max-width: 90vw;
+  max-height: 180px;
+  overflow-y: auto;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18);
+  padding: 1rem 2.5rem 1rem 1rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  scrollbar-width: thin;
+  scrollbar-color: #fff #222;
+}
+
+.canvas-result-sticky pre {
+  font-family: inherit;
+  font-size: 1rem;
+  color: #fff;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.canvas-result-sticky .close-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.2rem;
+  font-weight: bold;
+  cursor: pointer;
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  padding: 0;
+  line-height: 1;
+}

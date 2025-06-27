@@ -114,6 +114,7 @@
 .dropdown-item {
   display: flex;
   align-items: center;
+  gap: 8px;
   width: 100%;
   padding: 6px 12px;
   border: none;
@@ -183,6 +184,41 @@
 
 .font-size-menu {
   min-width: 120px;
+}
+
+.toolbar-label-with-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.toolbar-label-with-slider input[type="range"] {
+  cursor: pointer;
+}
+
+.color-palette-menu {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  padding: 8px;
+  width: 200px;
+}
+
+.color-palette-item {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid #ddd;
+  cursor: pointer;
+  padding: 0;
+}
+
+.color-palette-item:hover {
+  transform: scale(1.1);
+  border-color: #333;
 }
 
 /* Mobile optimization */
