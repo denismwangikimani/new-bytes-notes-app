@@ -476,6 +476,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [penColor, setPenColor] = useState("#000000");
   const [penSize, setPenSize] = useState(3);
   const [isEraser, setIsEraser] = useState(false);
+  const [isCanvasDirty, setIsCanvasDirty] = useState(false);
 
   // --- Refs for canvas and drawing ---
   const canvasRef = useRef(null);
@@ -517,18 +518,30 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
   useEffect(() => {
     updateTimeoutRef.current = setTimeout(() => {
-      if (
-        note &&
-        (serialize(slateValue) !== note.content || title !== note.title)
-      ) {
+      const contentChanged = note ? serialize(slateValue) !== note.content : false;
+      const titleChanged = note ? title !== note.title : false;
+
+      if (note && (contentChanged || titleChanged || isCanvasDirty)) {
         isAutoSaving.current = true;
-        onUpdate(note._id, {
-          ...note,
+
+        const updatePayload = {
           content: serialize(slateValue),
           title,
-        }).finally(() => {
-          isAutoSaving.current = false;
-        });
+        };
+
+        if (isCanvasDirty && canvasRef.current) {
+          updatePayload.canvasImage = canvasRef.current.toDataURL("image/png");
+        }
+
+        onUpdate(note._id, updatePayload)
+          .then(() => {
+            if (isCanvasDirty) {
+              setIsCanvasDirty(false);
+            }
+          })
+          .finally(() => {
+            isAutoSaving.current = false;
+          });
       }
     }, 3000);
 
@@ -537,7 +550,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         clearTimeout(updateTimeoutRef.current);
       }
     };
-  }, [slateValue, title, note, onUpdate, editor]);
+  }, [slateValue, title, note, onUpdate, editor, isCanvasDirty]);
 
   // --- Drawing Logic ---
   const saveToHistory = useCallback(() => {
@@ -572,18 +585,18 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       historyIndex.current--;
       const imageData = drawingHistory.current[historyIndex.current];
       drawImageOnCanvas(imageData);
-      onUpdate(note._id, { canvasImage: imageData });
+      setIsCanvasDirty(true);
     }
-  }, [note, onUpdate, drawImageOnCanvas]);
+  }, [drawImageOnCanvas]);
 
   const handleRedoDrawing = useCallback(() => {
     if (historyIndex.current < drawingHistory.current.length - 1) {
       historyIndex.current++;
       const imageData = drawingHistory.current[historyIndex.current];
       drawImageOnCanvas(imageData);
-      onUpdate(note._id, { canvasImage: imageData });
+      setIsCanvasDirty(true);
     }
-  }, [note, onUpdate, drawImageOnCanvas]);
+  }, [drawImageOnCanvas]);
 
   const handleResetDrawing = useCallback(() => {
     const canvas = canvasRef.current;
@@ -593,8 +606,8 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     const blankImage = canvas.toDataURL("image/png");
     drawingHistory.current = [blankImage];
     historyIndex.current = 0;
-    onUpdate(note._id, { canvasImage: "" });
-  }, [note, onUpdate]);
+    setIsCanvasDirty(true);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -612,7 +625,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     resizeObserver.observe(wrapper);
 
     canvas.width = wrapper.scrollWidth;
-    canvas.height = wrapper.scrollHeight;
+   canvas.height = wrapper.scrollHeight;
     const ctx = canvas.getContext("2d");
     if (note?.canvasImage) {
       drawImageOnCanvas(note.canvasImage, ctx);
@@ -625,7 +638,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     }
 
     return () => resizeObserver.disconnect();
-  }, [note?._id, note?.canvasImage, drawImageOnCanvas]);
+  }, [note?._id, drawImageOnCanvas]);
 
   const getCoords = (e) => {
     const canvas = canvasRef.current;
@@ -671,9 +684,8 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     if (!isDrawingRef.current) return;
     isDrawingRef.current = false;
     saveToHistory();
-    const dataUrl = canvasRef.current.toDataURL("image/png");
-    onUpdate(note._id, { canvasImage: dataUrl });
-  }, [note, onUpdate, saveToHistory]);
+    setIsCanvasDirty(true);
+  }, [saveToHistory]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
