@@ -475,11 +475,11 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   // --- New Integrated Drawing State ---
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [penColor, setPenColor] = useState("#000000");
-  const [penSize, setPenSize] = useState(3);
+  // Pen size is now managed automatically by penType
   const [isEraser, setIsEraser] = useState(false);
   const [isCanvasDirty, setIsCanvasDirty] = useState(false);
   const [penType, setPenType] = useState("ballpoint");
-  const [shape, setShape] = useState("pen");
+  const [shape, setShape] = useState("rect"); // Default shape is now rectangle
   const [calculationResult, setCalculationResult] = useState(null);
   const [isCalculating, setIsCalculating] = useState(false);
 
@@ -573,8 +573,9 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const drawShapeOnCanvas = useCallback(
     (ctx, start, end, color, size, shapeType) => {
       ctx.strokeStyle =
-        penType === "highlighter" ? hexToRgba(color, 0.4) : color;
-      ctx.lineWidth = penType === "highlighter" ? size * 4 : size;
+        penType === "highlighter" ? hexToRgba(color, 0.3) : color;
+      // Use a fixed, appropriate size for shapes when highlighter is active
+      ctx.lineWidth = penType === "highlighter" ? 15 : 3;
       ctx.beginPath();
       switch (shapeType) {
         case "rect":
@@ -790,7 +791,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
             shapeStartPointRef.current,
             newPos,
             penColor,
-            penSize,
+            3, // Shapes will have a fixed size
             shape
           );
         };
@@ -802,11 +803,11 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       ctx.globalCompositeOperation = isEraser
         ? "destination-out"
         : "source-over";
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
+      ctx.lineJoin = "round"; // Keep line join round for smooth corners
 
       if (isEraser) {
-        ctx.lineWidth = penSize * 2;
+        ctx.lineWidth = 20; // Use a fixed, larger size for the eraser
+        ctx.lineCap = "round";
       } else {
         const pressure =
           e.pressure !== undefined && e.pressure > 0 ? e.pressure : 0.5;
@@ -814,25 +815,30 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
         switch (penType) {
           case "highlighter":
-            ctx.strokeStyle = hexToRgba(penColor, 0.4);
-            ctx.lineWidth = penSize * 4;
+            ctx.strokeStyle = hexToRgba(penColor, 0.3); // More transparent
+            ctx.lineWidth = 15;
+            ctx.lineCap = "butt"; // Flat ends for highlighter
             break;
           case "fountain":
-            ctx.lineWidth = penSize * pressure * 1.5;
+            ctx.lineWidth = 2 * pressure * 1.5;
             ctx.strokeStyle = penColor;
+            ctx.lineCap = "round";
             break;
           case "brush":
-            ctx.lineWidth = penSize * pressure * 3;
+            ctx.lineWidth = 8 * pressure * 3;
             ctx.strokeStyle = penColor;
+            ctx.lineCap = "round";
             break;
           case "pencil":
             ctx.strokeStyle = hexToRgba(penColor, 0.7);
-            ctx.lineWidth = penSize * pressure;
+            ctx.lineWidth = 1.5 * pressure;
+            ctx.lineCap = "butt"; // Flat ends for pencil
             break;
           case "ballpoint":
           default:
-            ctx.lineWidth = penSize;
+            ctx.lineWidth = 2;
             ctx.strokeStyle = penColor;
+            ctx.lineCap = "round";
             break;
         }
       }
@@ -841,7 +847,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       ctx.beginPath();
       ctx.moveTo(newPos.x, newPos.y);
     },
-    [isEraser, penColor, penSize, penType, shape, drawShapeOnCanvas]
+    [isEraser, penColor, penType, shape, drawShapeOnCanvas]
   );
 
   const stopDrawing = useCallback(() => {
@@ -1569,8 +1575,6 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         onToggleDrawingMode={() => setIsDrawingMode((prev) => !prev)}
         penColor={penColor}
         onSetPenColor={setPenColor}
-        penSize={penSize}
-        onSetPenSize={setPenSize}
         isEraser={isEraser}
         onSetIsEraser={setIsEraser}
         onUndoDrawing={handleUndoDrawing}

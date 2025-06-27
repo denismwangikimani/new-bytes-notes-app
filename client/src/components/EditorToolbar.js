@@ -13,9 +13,6 @@ import {
   Code,
   Quote,
   Type,
-  // Heading1,
-  // Heading2,
-  // Heading3,
   ChevronDown,
   MoreHorizontal,
   Image,
@@ -32,7 +29,6 @@ import {
   Pencil,
   Eraser,
   Calculator,
-  //Palettes,
   Pen,
   Undo,
   Redo,
@@ -40,58 +36,6 @@ import {
 } from "lucide-react";
 import "./EditorToolbar.css";
 import MediaDialog from "./MediaDialog";
-
-// A simplified toolbar for canvas controls
-const CanvasToolbar = ({
-  onUndo,
-  onRedo,
-  onReset,
-  onEraser,
-  onPenSize,
-  isEraser,
-  penSize,
-}) => (
-  <div
-    className="canvas-toolbar-scroll"
-    style={{ display: "flex", alignItems: "center", gap: 8 }}
-  >
-    <button className="toolbar-button" onClick={onUndo}>
-      Undo
-    </button>
-    <button className="toolbar-button" onClick={onRedo}>
-      Redo
-    </button>
-    <button className="toolbar-button" onClick={onReset}>
-      Clear
-    </button>
-    <button
-      className={`toolbar-button ${isEraser ? "active" : ""}`}
-      onClick={onEraser}
-      title={isEraser ? "Switch to Pen" : "Switch to Eraser"}
-    >
-      Eraser
-    </button>
-    <label
-      style={{
-        marginLeft: 8,
-        display: "flex",
-        alignItems: "center",
-        gap: "4px",
-        color: "#6b7280",
-      }}
-    >
-      Size:
-      <input
-        type="range"
-        min={1}
-        max={20}
-        value={penSize}
-        onChange={(e) => onPenSize(Number(e.target.value))}
-        style={{ verticalAlign: "middle" }}
-      />
-    </label>
-  </div>
-);
 
 const EditorToolbar = ({
   onFormatText,
@@ -101,8 +45,6 @@ const EditorToolbar = ({
   onToggleDrawingMode,
   penColor,
   onSetPenColor,
-  penSize,
-  onSetPenSize,
   isEraser,
   onSetIsEraser,
   onUndoDrawing,
@@ -125,8 +67,7 @@ const EditorToolbar = ({
   const [showMediaDialog, setShowMediaDialog] = useState(false);
   const [mediaType, setMediaType] = useState(null);
 
-  // New state for drawing dropdowns
-  const [showPenMenu, setShowPenMenu] = useState(false);
+  // State for drawing dropdowns
   const [showShapeMenu, setShowShapeMenu] = useState(false);
   const [showColorPalette, setShowColorPalette] = useState(false);
 
@@ -136,9 +77,7 @@ const EditorToolbar = ({
   const fontSizeButtonRef = useRef(null);
   const headingMenuRef = useRef(null);
   const headingButtonRef = useRef(null);
-  // New refs for drawing dropdowns
-  const penMenuRef = useRef(null);
-  const penButtonRef = useRef(null);
+  // Refs for drawing dropdowns
   const shapeMenuRef = useRef(null);
   const shapeButtonRef = useRef(null);
   const colorPaletteRef = useRef(null);
@@ -161,15 +100,14 @@ const EditorToolbar = ({
   ];
 
   const pens = [
-    { type: "ballpoint", name: "Ballpoint", icon: <Pen size={18} /> },
-    { type: "fountain", name: "Fountain", icon: <Pen size={18} /> },
-    { type: "brush", name: "Brush", icon: <Brush size={18} /> },
+    { type: "ballpoint", name: "Ballpoint Pen", icon: <Pen size={18} /> },
+    { type: "fountain", name: "Fountain Pen", icon: <Brush size={18} /> },
+    { type: "pencil", name: "Pencil", icon: <Pencil size={18} /> },
     {
       type: "highlighter",
       name: "Highlighter",
       icon: <Highlighter size={18} />,
     },
-    { type: "pencil", name: "Pencil", icon: <Pencil size={18} /> },
   ];
 
   const shapes = [
@@ -229,14 +167,6 @@ const EditorToolbar = ({
         !headingButtonRef.current.contains(event.target)
       )
         setShowHeadingMenu(false);
-      // Add listeners for new dropdowns
-      if (
-        showPenMenu &&
-        penMenuRef.current &&
-        !penMenuRef.current.contains(event.target) &&
-        !penButtonRef.current.contains(event.target)
-      )
-        setShowPenMenu(false);
       if (
         showShapeMenu &&
         shapeMenuRef.current &&
@@ -258,7 +188,6 @@ const EditorToolbar = ({
     showFontFamilyMenu,
     showFontSizeMenu,
     showHeadingMenu,
-    showPenMenu,
     showShapeMenu,
     showColorPalette,
   ]);
@@ -520,7 +449,11 @@ const EditorToolbar = ({
   );
 
   return (
-    <div className={`editor-toolbar ${isKeyboardVisible ? "keyboard-visible" : ""}`}>
+    <div
+      className={`editor-toolbar ${
+        isKeyboardVisible ? "keyboard-visible" : ""
+      }`}
+    >
       <div className="toolbar-inner">
         <button
           className={`toolbar-button${isDrawingMode ? " active" : ""}`}
@@ -533,39 +466,72 @@ const EditorToolbar = ({
 
         {isDrawingMode ? (
           <>
-            <button className="toolbar-button" onClick={onUndoDrawing} title="Undo"><Undo size={18} /></button>
-            <button className="toolbar-button" onClick={onRedoDrawing} title="Redo"><Redo size={18} /></button>
-            <button className="toolbar-button" onClick={onResetDrawing} title="Clear Canvas"><Trash2 size={18} /></button>
+            <button
+              className="toolbar-button"
+              onClick={onUndoDrawing}
+              title="Undo"
+            >
+              <Undo size={18} />
+            </button>
+            <button
+              className="toolbar-button"
+              onClick={onRedoDrawing}
+              title="Redo"
+            >
+              <Redo size={18} />
+            </button>
             <div className="toolbar-divider"></div>
 
-            {/* Pen Type Dropdown */}
-            <div className="toolbar-dropdown">
-              <button ref={penButtonRef} className="toolbar-button" onClick={() => setShowPenMenu(s => !s)} title="Pen Type">
-                {pens.find(p => p.type === penType)?.icon || <Pen size={18} />}
-                <ChevronDown size={14} />
+            {/* Pen Type Buttons */}
+            {pens.map((p) => (
+              <button
+                key={p.type}
+                className={`toolbar-button ${
+                  penType === p.type && !isEraser ? "active" : ""
+                }`}
+                onClick={() => {
+                  onSetPenType(p.type);
+                  onSetIsEraser(false);
+                }}
+                title={p.name}
+              >
+                {p.icon}
               </button>
-              {showPenMenu && (
-                <div ref={penMenuRef} className="dropdown-menu">
-                  {pens.map(p => (
-                    <button key={p.type} className="dropdown-item" onClick={() => { onSetPenType(p.type); setShowPenMenu(false); }}>
-                      {p.icon} <span style={{marginLeft: 8}}>{p.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+            ))}
+            <button
+              className={`toolbar-button ${isEraser ? "active" : ""}`}
+              onClick={() => onSetIsEraser((e) => !e)}
+              title="Eraser"
+            >
+              <Eraser size={18} />
+            </button>
+            <div className="toolbar-divider"></div>
 
             {/* Shape Dropdown */}
             <div className="toolbar-dropdown">
-              <button ref={shapeButtonRef} className="toolbar-button" onClick={() => setShowShapeMenu(s => !s)} title="Draw Shape">
-                {shapes.find(s => s.type === shape)?.icon || <Square size={18} />}
+              <button
+                ref={shapeButtonRef}
+                className="toolbar-button"
+                onClick={() => setShowShapeMenu((s) => !s)}
+                title="Draw Shape"
+              >
+                {shapes.find((s) => s.type === shape)?.icon || (
+                  <Square size={18} />
+                )}
                 <ChevronDown size={14} />
               </button>
               {showShapeMenu && (
                 <div ref={shapeMenuRef} className="dropdown-menu">
-                  {shapes.map(s => (
-                    <button key={s.type} className="dropdown-item" onClick={() => { onSetShape(s.type); setShowShapeMenu(false); }}>
-                      {s.icon} <span style={{marginLeft: 8}}>{s.name}</span>
+                  {shapes.map((s) => (
+                    <button
+                      key={s.type}
+                      className="dropdown-item"
+                      onClick={() => {
+                        onSetShape(s.type);
+                        setShowShapeMenu(false);
+                      }}
+                    >
+                      {s.icon} <span style={{ marginLeft: 8 }}>{s.name}</span>
                     </button>
                   ))}
                 </div>
@@ -574,50 +540,87 @@ const EditorToolbar = ({
 
             {/* Color Palette */}
             <div className="toolbar-dropdown">
-              <button ref={colorButtonRef} className="toolbar-button" onClick={() => setShowColorPalette(s => !s)} title="Pen Color">
-                <div style={{width: 18, height: 18, borderRadius: '50%', backgroundColor: penColor, border: '1px solid #ccc'}}></div>
+              <button
+                ref={colorButtonRef}
+                className="toolbar-button"
+                onClick={() => setShowColorPalette((s) => !s)}
+                title="Pen Color"
+              >
+                <div
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: "50%",
+                    backgroundColor: penColor,
+                    border: "1px solid #ccc",
+                  }}
+                ></div>
               </button>
               {showColorPalette && (
-                <div ref={colorPaletteRef} className="dropdown-menu color-palette-menu">
-                  {drawingColors.map(c => (
-                    <button key={c} className="color-palette-item" style={{backgroundColor: c}} onClick={() => { onSetPenColor(c); setShowColorPalette(false); }} />
+                <div
+                  ref={colorPaletteRef}
+                  className="dropdown-menu color-palette-menu"
+                >
+                  {drawingColors.map((c) => (
+                    <button
+                      key={c}
+                      className="color-palette-item"
+                      style={{ backgroundColor: c }}
+                      onClick={() => {
+                        onSetPenColor(c);
+                        setShowColorPalette(false);
+                      }}
+                    />
                   ))}
                 </div>
               )}
             </div>
 
-            {/* Pen Size */}
-            <label className="toolbar-label-with-slider">
-              Size:
-              <input type="range" min={1} max={50} value={penSize} onChange={(e) => onSetPenSize(Number(e.target.value))} />
-            </label>
-
-            <button className={`toolbar-button ${isEraser ? "active" : ""}`} onClick={() => onSetIsEraser(e => !e)} title="Eraser">
-              <Eraser size={18} />
+            <button
+              className="toolbar-button"
+              onClick={onResetDrawing}
+              title="Clear Canvas"
+            >
+              <Trash2 size={18} />
             </button>
             <div className="toolbar-divider"></div>
 
-            <button className="toolbar-button" onClick={onCalculate} title="Calculate with AI"><Calculator size={18} /></button>
+            <button
+              className="toolbar-button"
+              onClick={onCalculate}
+              title="Calculate with AI"
+            >
+              <Calculator size={18} />
+            </button>
             <div className="toolbar-divider"></div>
 
-            <button className="toolbar-button" onClick={() => handleFormat("image")} title="Insert Image"><Image size={18} /></button>
-            <button className="toolbar-button" onClick={() => handleFormat("video")} title="Insert Video"><Video size={18} /></button>
-            <button className="toolbar-button" onClick={() => handleFormat("file")} title="Insert File"><FileText size={18} /></button>
-            <button className="toolbar-button" onClick={() => handleFormat("link")} title="Insert Link"><Link size={18} /></button>
+            <button
+              className="toolbar-button"
+              onClick={() => handleFormat("image")}
+              title="Insert Image"
+            >
+              <Image size={18} />
+            </button>
           </>
         ) : (
           <>
             {primaryTools}
-            <div className={`secondary-tools ${showAllTools ? "expanded" : ""}`}>
+            <div
+              className={`secondary-tools ${showAllTools ? "expanded" : ""}`}
+            >
               {secondaryTools}
             </div>
-            <button className="toolbar-button more-button" onClick={() => setShowAllTools(!showAllTools)} title={showAllTools ? "Show Less" : "Show More"}>
+            <button
+              className="toolbar-button more-button"
+              onClick={() => setShowAllTools(!showAllTools)}
+              title={showAllTools ? "Show Less" : "Show More"}
+            >
               <MoreHorizontal size={18} />
             </button>
           </>
         )}
       </div>
-      {!isDrawingMode && showMediaDialog && (
+      {showMediaDialog && (
         <MediaDialog
           type={mediaType}
           isOpen={showMediaDialog}
