@@ -478,6 +478,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   // Pen size is now managed automatically by penType
   const [isEraser, setIsEraser] = useState(false);
   const [isCanvasDirty, setIsCanvasDirty] = useState(false);
+  const [penSize, setPenSize] = useState(2); // Default pen size
   const [penType, setPenType] = useState("ballpoint");
   const [shape, setShape] = useState("rect"); // Default shape is now rectangle
   const [calculationResult, setCalculationResult] = useState(null);
@@ -570,12 +571,18 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   };
 
+  // Enhanced drawing logic with better pen behaviors
   const drawShapeOnCanvas = useCallback(
     (ctx, start, end, color, size, shapeType) => {
-      ctx.strokeStyle =
-        penType === "highlighter" ? hexToRgba(color, 0.3) : color;
-      // Use a fixed, appropriate size for shapes when highlighter is active
-      ctx.lineWidth = penType === "highlighter" ? 15 : 3;
+      // Get pen-specific properties
+      const penProps = getPenProperties(penType, color, size);
+
+      ctx.strokeStyle = penProps.strokeStyle;
+      ctx.lineWidth = penProps.lineWidth;
+      ctx.lineCap = penProps.lineCap;
+      ctx.lineJoin = penProps.lineJoin;
+      ctx.globalAlpha = penProps.opacity;
+
       ctx.beginPath();
       switch (shapeType) {
         case "rect":
@@ -604,9 +611,81 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         default:
           break;
       }
+      ctx.globalAlpha = 1.0; // Reset alpha
     },
     [penType]
   );
+
+  // Enhanced pen properties function
+  const getPenProperties = useCallback((penType, color, userSize) => {
+    const baseProps = {
+      strokeStyle: color,
+      lineWidth: userSize,
+      lineCap: "round",
+      lineJoin: "round",
+      opacity: 1.0,
+      smoothness: 1.0,
+    };
+
+    switch (penType) {
+      case "fountain":
+        return {
+          ...baseProps,
+          lineWidth: userSize * 1.2, // Slightly thicker
+          lineCap: "round",
+          lineJoin: "round",
+          opacity: 0.9,
+          // Fountain pens have variable width based on pressure
+          variableWidth: true,
+          minWidth: userSize * 0.7,
+          maxWidth: userSize * 1.8,
+        };
+
+      case "calligraphy":
+        return {
+          ...baseProps,
+          lineWidth: userSize * 1.5,
+          lineCap: "butt", // Sharp edges for calligraphy
+          lineJoin: "miter",
+          opacity: 0.95,
+          variableWidth: true,
+          minWidth: userSize * 0.5,
+          maxWidth: userSize * 2.5,
+        };
+
+      case "pencil":
+        return {
+          ...baseProps,
+          strokeStyle: hexToRgba(color, 0.7), // More transparent
+          lineWidth: userSize * 0.8,
+          lineCap: "round",
+          lineJoin: "round",
+          opacity: 0.7,
+          texture: true, // Add slight texture
+        };
+
+      case "highlighter":
+        return {
+          ...baseProps,
+          strokeStyle: hexToRgba(color, 0.3), // Very transparent
+          lineWidth: userSize * 3, // Much wider
+          lineCap: "butt", // Flat edges like real highlighter
+          lineJoin: "round", // Smooth corners
+          opacity: 0.3,
+          blend: "multiply", // Realistic highlighter blending
+        };
+
+      case "ballpoint":
+      default:
+        return {
+          ...baseProps,
+          lineWidth: userSize,
+          lineCap: "round",
+          lineJoin: "round",
+          opacity: 1.0,
+        };
+    }
+  }, []);
 
   const handleCalculate = async () => {
     if (!canvasRef.current || isCalculating) return;
@@ -772,6 +851,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     [shape, saveToHistory]
   );
 
+  // Fixed drawing function with smooth highlighter
   const draw = useCallback(
     (e) => {
       if (!isDrawingRef.current) return;
@@ -791,7 +871,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
             shapeStartPointRef.current,
             newPos,
             penColor,
-            3, // Shapes will have a fixed size
+            penSize,
             shape
           );
         };
@@ -799,55 +879,56 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         return;
       }
 
-      ctx.lineTo(newPos.x, newPos.y);
-      ctx.globalCompositeOperation = isEraser
-        ? "destination-out"
-        : "source-over";
-      ctx.lineJoin = "round"; // Keep line join round for smooth corners
+      // Get pen properties
+      const penProps = getPenProperties(penType, penColor, penSize);
 
       if (isEraser) {
-        ctx.lineWidth = 20; // Use a fixed, larger size for the eraser
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.lineWidth = penSize * 2;
         ctx.lineCap = "round";
+        ctx.lineJoin = "round";
       } else {
+        ctx.globalCompositeOperation = penProps.blend || "source-over";
+        ctx.strokeStyle = penProps.strokeStyle;
+        ctx.lineCap = penProps.lineCap;
+        ctx.lineJoin = penProps.lineJoin;
+        ctx.globalAlpha = penProps.opacity;
+
+        // Calculate pressure for variable width pens
         const pressure =
           e.pressure !== undefined && e.pressure > 0 ? e.pressure : 0.5;
-        ctx.setLineDash([]);
 
-        switch (penType) {
-          case "highlighter":
-            ctx.strokeStyle = hexToRgba(penColor, 0.3); // More transparent
-            ctx.lineWidth = 15;
-            ctx.lineCap = "butt"; // Flat ends for highlighter
-            break;
-          case "fountain":
-            ctx.lineWidth = 2 * pressure * 1.5;
-            ctx.strokeStyle = penColor;
-            ctx.lineCap = "round";
-            break;
-          case "brush":
-            ctx.lineWidth = 8 * pressure * 3;
-            ctx.strokeStyle = penColor;
-            ctx.lineCap = "round";
-            break;
-          case "pencil":
-            ctx.strokeStyle = hexToRgba(penColor, 0.7);
-            ctx.lineWidth = 1.5 * pressure;
-            ctx.lineCap = "butt"; // Flat ends for pencil
-            break;
-          case "ballpoint":
-          default:
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = penColor;
-            ctx.lineCap = "round";
-            break;
+        if (penProps.variableWidth) {
+          const variableWidth =
+            penProps.minWidth +
+            (penProps.maxWidth - penProps.minWidth) * pressure;
+          ctx.lineWidth = variableWidth;
+        } else {
+          ctx.lineWidth = penProps.lineWidth;
         }
       }
+
+      // CRITICAL FIX for highlighter smoothness:
+      // Don't call beginPath() during drawing - only at the start
+      ctx.lineTo(newPos.x, newPos.y);
       ctx.stroke();
-      lastPositionRef.current = newPos;
+
+      // For smooth continuous lines, move the path to the current position
+      // without breaking the path
       ctx.beginPath();
       ctx.moveTo(newPos.x, newPos.y);
+
+      lastPositionRef.current = newPos;
     },
-    [isEraser, penColor, penType, shape, drawShapeOnCanvas]
+    [
+      isEraser,
+      penColor,
+      penSize,
+      penType,
+      shape,
+      drawShapeOnCanvas,
+      getPenProperties,
+    ]
   );
 
   const stopDrawing = useCallback(() => {
@@ -1575,6 +1656,8 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         onToggleDrawingMode={() => setIsDrawingMode((prev) => !prev)}
         penColor={penColor}
         onSetPenColor={setPenColor}
+        penSize={penSize}
+        onSetPenSize={setPenSize}
         isEraser={isEraser}
         onSetIsEraser={setIsEraser}
         onUndoDrawing={handleUndoDrawing}

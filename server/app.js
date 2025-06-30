@@ -1214,8 +1214,12 @@ app.post("/canvas-calculate", async (req, res) => {
           "Make sure to use extra backslashes for escape characters like \\f -> \\\\f, \\n -> \\\\n, etc. " +
           `Here is a dictionary of user-assigned variables. If the given expression has any of these variables, use its actual value from this dictionary accordingly: ${dict_of_vars_str}. ` +
           "DO NOT USE BACKTICKS OR MARKDOWN FORMATTING. " +
-          "PROPERLY QUOTE THE KEYS AND VALUES IN THE DICTIONARY FOR EASIER PARSING WITH Python's ast.literal_eval.",
-      },
+          "PROPERLY QUOTE THE KEYS AND VALUES IN THE DICTIONARY FOR EASIER PARSING WITH Python's ast.literal_eval." +
+          "For example, if you see '50 / 2', your answer should be '50/2=25'. " +
+          "If there are multiple expressions, list each on a new line. " +
+          "Use the PEMDAS rule for solving mathematical expressions. " +
+          "DO NOT use JSON, backticks, or any other code formatting in your response. Just provide the plain text answer."
+        },
     ];
 
     // Remove the data:image/png;base64, prefix if present
