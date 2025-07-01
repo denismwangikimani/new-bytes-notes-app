@@ -816,7 +816,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       } else {
         const penProps =
           penType === "highlighter"
-            ? getPenProperties(penType, penColor, penSize, 0, 1)
+            ? getPenProperties(penType, penColor, penSize)
             : getPenProperties(
                 penType,
                 penColor,
@@ -917,16 +917,18 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
         let penProps;
         if (!isEraser) {
-          penProps =
-            penType === "highlighter"
-              ? getPenProperties(penType, penColor, penSize, 0, 1)
-              : getPenProperties(
-                  penType,
-                  penColor,
-                  penSize,
-                  smoothedVelocity,
-                  pressureRef.current
-                );
+          // UPDATED: Use a simplified properties call for the highlighter
+          if (penType === "highlighter") {
+            penProps = getPenProperties(penType, penColor, penSize);
+          } else {
+            penProps = getPenProperties(
+              penType,
+              penColor,
+              penSize,
+              smoothedVelocity,
+              pressureRef.current
+            );
+          }
 
           if (penType === "highlighter") {
             ctx.globalCompositeOperation = "destination-over";
