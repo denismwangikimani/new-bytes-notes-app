@@ -347,6 +347,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const historyIndex = useRef(-1);
   const shapeStartPointRef = useRef(null);
   const canvasSnapshotBeforeShapeRef = useRef(null);
+  const [highlighterOpacity, setHighlighterOpacity] = useState(0.3);
 
   // --- Enhanced refs for realistic pen physics ---
   const lastVelocityRef = useRef(0);
@@ -472,14 +473,14 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           };
 
         case "highlighter":
-          // UPDATED: Consistent opacity highlighter for canvas drawing
+          // Use the user-selected opacity
           return {
             ...baseProps,
-            strokeStyle: hexToRgba(color, 0.3), // Fixed opacity
+            strokeStyle: hexToRgba(color, highlighterOpacity),
             lineWidth: size * 1.2,
             lineCap: "butt",
             lineJoin: "round",
-            opacity: 0.3, // Fixed opacity - no variation
+            opacity: highlighterOpacity,
             blend: "multiply",
             globalCompositeOperation: "destination-over",
           };
@@ -494,14 +495,14 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           };
       }
     },
-    [hexToRgba]
+    [hexToRgba, highlighterOpacity]
   );
 
   // --- NEW: Text highlighting function ---
   const handleTextHighlight = useCallback(
     (color) => {
       const { selection } = editor;
-      
+
       // If we have a text selection, highlight it
       if (selection && !Range.isCollapsed(selection)) {
         Transforms.setNodes(
@@ -524,14 +525,14 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           // Get the selected text range
           const range = domSelection.getRangeAt(0);
           const selectedText = range.toString();
-          
+
           if (selectedText.trim()) {
             // Find the corresponding Slate selection
             const slateRange = ReactEditor.toSlateRange(editor, range, {
               exactMatch: false,
               suppressThrow: true,
             });
-            
+
             if (slateRange) {
               Transforms.setNodes(
                 editor,
@@ -547,7 +548,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         } catch (error) {
           console.log("Could not highlight DOM selection:", error);
         }
-        
+
         // Clear the DOM selection
         domSelection.removeAllRanges();
         ReactEditor.focus(editor);
@@ -753,77 +754,83 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   // --- COMPLETELY REWRITTEN: Apple Notes-style drawing logic ---
   const startDrawing = useCallback(
     (e) => {
-      e.preventDefault();
       const canvas = canvasRef.current;
       if (!canvas) return;
 
-      // UPDATED: Handle highlighter mode for both text and canvas highlighting
+      // --- SMART HIGHLIGHTER LOGIC ---
       if (penType === "highlighter" && !isEraser) {
-        // Check if we're clicking on text content
-        const target = e.target;
-        const editorContent = document.querySelector(".rich-editor");
+        // Temporarily disable pointer events on the canvas to "peek" at what's underneath.
+        canvas.style.pointerEvents = "none";
+        const elementUnderneath = document.elementFromPoint(
+          e.clientX,
+          e.clientY
+        );
+        // Immediately restore pointer events so canvas drawing can work if needed.
+        canvas.style.pointerEvents = "auto";
 
-        // If clicking within the editor content area, enable text selection for highlighting
-        if (editorContent && editorContent.contains(target)) {
-          // Temporarily disable drawing mode to allow text selection
+        const editorContent =
+          editorWrapperRef.current?.querySelector(".rich-editor");
+
+        // Check if the click was on the rich text editor content.
+        if (editorContent && editorContent.contains(elementUnderneath)) {
+          // The user is trying to highlight typed text.
+          // 1. Prevent the canvas from starting a drawing path.
+          e.preventDefault();
+
+          // 2. Temporarily disable drawing mode to allow native browser text selection.
           setIsDrawingMode(false);
 
-          // Set up text selection listener
-          setTimeout(() => {
-            const handleTextSelection = () => {
-              const selection = window.getSelection();
-              if (selection && !selection.isCollapsed) {
-                // Apply highlight to selected text
-                handleTextHighlight(penColor);
-                // Re-enable drawing mode after highlighting
-                setIsDrawingMode(true);
-              }
-            };
+          // 3. On mouse up, check for a selection and apply the highlight.
+          const handleMouseUpForHighlight = () => {
+            const selection = window.getSelection();
+            if (selection && !selection.isCollapsed) {
+              handleTextHighlight(penColor);
+            }
+            // 4. Always re-enable drawing mode afterwards.
+            setIsDrawingMode(true);
+          };
 
-            // Listen for text selection
-            document.addEventListener("mouseup", handleTextSelection, {
-              once: true,
-            });
+          // Listen for the *next* mouseup event on the document, then remove the listener.
+          document.addEventListener("mouseup", handleMouseUpForHighlight, {
+            once: true,
+          });
 
-            // If no text is selected after a short delay, re-enable drawing mode
-            setTimeout(() => {
-              setIsDrawingMode(true);
-            }, 100);
-          }, 10);
-
+          // Return here to prevent the canvas drawing logic from running.
           return;
         }
-        // If not clicking on text, continue with canvas highlighting (for handwritten content)
+        // If the click was not on the editor, fall through to the default canvas drawing logic below.
       }
 
+      // --- HANDWRITTEN/CANVAS DRAWING LOGIC (existing code) ---
+      e.preventDefault(); // Keep this for touch devices
       saveToHistory();
       isDrawingRef.current = true;
       const coords = getCoords(e);
       const ctx = canvas.getContext("2d");
 
-      // Get pressure if available (for stylus/Apple Pencil)
       pressureRef.current = e.pressure || 0.5;
 
       if (shape !== "pen") {
         shapeStartPointRef.current = coords;
         canvasSnapshotBeforeShapeRef.current = canvas.toDataURL();
       } else {
-        const penProps = getPenProperties(
-          penType,
-          penColor,
-          penSize,
-          0,
-          pressureRef.current
-        );
+        const penProps =
+          penType === "highlighter"
+            ? getPenProperties(penType, penColor, penSize, 0, 1)
+            : getPenProperties(
+                penType,
+                penColor,
+                penSize,
+                0,
+                pressureRef.current
+              );
 
-        // Handle eraser
         if (isEraser) {
           ctx.globalCompositeOperation = "destination-out";
           ctx.globalAlpha = 1.0;
           ctx.lineCap = "round";
           ctx.lineWidth = penSize * 2;
         } else if (penType === "highlighter") {
-          // UPDATED: Highlighter for handwritten content - draw behind existing content
           ctx.globalCompositeOperation = "destination-over";
           ctx.globalAlpha = penProps.opacity;
           ctx.lineCap = penProps.lineCap;
@@ -831,7 +838,6 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           ctx.strokeStyle = penProps.strokeStyle;
           ctx.lineWidth = penProps.lineWidth;
         } else {
-          // Regular pens
           ctx.globalCompositeOperation = penProps.blend || "source-over";
           ctx.globalAlpha = penProps.opacity;
           ctx.lineCap = penProps.lineCap;
@@ -840,12 +846,10 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           ctx.lineWidth = penProps.lineWidth;
         }
 
-        // Initialize tracking variables
         lastPositionRef.current = coords;
         lastTimestampRef.current = performance.now();
         lastVelocityRef.current = 0;
 
-        // Start the path
         ctx.beginPath();
         ctx.moveTo(coords.x, coords.y);
       }
@@ -860,6 +864,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       penSize,
       isEraser,
       handleTextHighlight,
+      setIsDrawingMode,
     ]
   );
 
@@ -910,36 +915,38 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         // Update pressure if available
         pressureRef.current = e.pressure || pressureRef.current;
 
+        let penProps;
         if (!isEraser) {
-          // Get updated pen properties based on velocity and pressure
-          const penProps = getPenProperties(
-            penType,
-            penColor,
-            penSize,
-            smoothedVelocity,
-            pressureRef.current
-          );
+          penProps =
+            penType === "highlighter"
+              ? getPenProperties(penType, penColor, penSize, 0, 1)
+              : getPenProperties(
+                  penType,
+                  penColor,
+                  penSize,
+                  smoothedVelocity,
+                  pressureRef.current
+                );
 
-          // UPDATED: Don't change composite operation during drawing for highlighter
-          if (penType !== "highlighter") {
-            // Smoothly adjust line width for variable-width pens (not highlighter)
+          if (penType === "highlighter") {
+            ctx.globalCompositeOperation = "destination-over";
+            ctx.globalAlpha = penProps.opacity;
+            ctx.strokeStyle = penProps.strokeStyle;
+            ctx.lineWidth = penProps.lineWidth;
+            ctx.lineCap = penProps.lineCap;
+            ctx.lineJoin = penProps.lineJoin;
+          } else {
             const targetWidth = penProps.lineWidth;
             ctx.lineWidth = ctx.lineWidth * 0.7 + targetWidth * 0.3;
-
-            // Update other properties for non-highlighter pens
             ctx.strokeStyle = penProps.strokeStyle;
             ctx.globalAlpha = penProps.opacity;
             ctx.globalCompositeOperation = penProps.blend;
           }
-          // For highlighter, don't change properties during drawing to maintain smoothness
         }
 
-        // CRITICAL: This is the key to smooth, continuous lines
-        // We simply extend the current path to the new position
         ctx.lineTo(newPos.x, newPos.y);
         ctx.stroke();
 
-        // Update tracking variables
         lastPositionRef.current = newPos;
         lastTimestampRef.current = now;
         lastVelocityRef.current = smoothedVelocity;
@@ -959,26 +966,65 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   );
 
   // --- UPDATED: Clean stop drawing ---
-  const stopDrawing = useCallback(() => {
-    if (!isDrawingRef.current) return;
+  const stopDrawing = useCallback(
+    (e) => {
+      if (!isDrawingRef.current) return;
 
-    const canvas = canvasRef.current;
-    if (canvas) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
       const ctx = canvas.getContext("2d");
-      // End the current path
+
+      // --- Shape Drawing Logic ---
+      if (
+        shape !== "pen" &&
+        shapeStartPointRef.current &&
+        canvasSnapshotBeforeShapeRef.current
+      ) {
+        // Capture the start point before it's cleared
+        const startPoint = shapeStartPointRef.current;
+        const endPoint = getCoords(e);
+        const snapshot = canvasSnapshotBeforeShapeRef.current;
+
+        const img = new Image();
+        img.onload = () => {
+          // 1. Restore canvas to the state before the shape was started
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+
+          // 2. Draw the final shape
+          drawShapeOnCanvas(
+            ctx,
+            startPoint,
+            endPoint,
+            penColor,
+            penSize,
+            shape
+          );
+
+          // 3. Now it's safe to clear the refs
+          shapeStartPointRef.current = null;
+          canvasSnapshotBeforeShapeRef.current = null;
+        };
+        img.src = snapshot;
+      } else {
+        // For pen/eraser, just clear the refs
+        shapeStartPointRef.current = null;
+        canvasSnapshotBeforeShapeRef.current = null;
+      }
+
+      // --- General Cleanup ---
       ctx.closePath();
-      // Reset to defaults to avoid affecting other operations
       ctx.globalAlpha = 1.0;
       ctx.globalCompositeOperation = "source-over";
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
-    }
 
-    isDrawingRef.current = false;
-    shapeStartPointRef.current = null;
-    canvasSnapshotBeforeShapeRef.current = null;
-    setIsCanvasDirty(true);
-  }, []);
+      isDrawingRef.current = false;
+      setIsCanvasDirty(true);
+    },
+    [shape, getCoords, drawShapeOnCanvas, penColor, penSize]
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1725,6 +1771,8 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         onSetPenColor={setPenColor}
         penSize={penSize}
         onSetPenSize={setPenSize}
+        highlighterOpacity={highlighterOpacity}
+        onSetHighlighterOpacity={setHighlighterOpacity}
         isEraser={isEraser}
         onSetIsEraser={setIsEraser}
         onUndoDrawing={handleUndoDrawing}

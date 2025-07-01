@@ -57,6 +57,8 @@ const EditorToolbar = ({
   shape,
   onSetShape,
   onCalculate,
+  highlighterOpacity,
+  onSetHighlighterOpacity,
 }) => {
   const [showAllTools, setShowAllTools] = useState(false);
   const [showFontFamilyMenu, setShowFontFamilyMenu] = useState(false);
@@ -577,6 +579,36 @@ const EditorToolbar = ({
               </label>
             </div>
             <div className="toolbar-divider"></div>
+
+            {/* Highlighter Opacity Slider */}
+            {penType === "highlighter" && (
+              <div className="pen-size-container">
+                <label className="toolbar-label-with-slider">
+                  Transparency:
+                  <input
+                    type="range"
+                    min={0.02}
+                    max={0.3}
+                    step={0.01}
+                    value={highlighterOpacity}
+                    onChange={(e) =>
+                      onSetHighlighterOpacity(Number(e.target.value))
+                    }
+                    className="size-slider"
+                    style={{ width: 80 }}
+                  />
+                  <span className="size-display">
+                    {highlighterOpacity <= 0.04
+                      ? "Clear"
+                      : highlighterOpacity < 0.12
+                      ? "Less"
+                      : highlighterOpacity < 0.22
+                      ? "More"
+                      : "Opaque"}
+                  </span>
+                </label>
+              </div>
+            )}
 
             {/* Shape Dropdown */}
             <div className="toolbar-dropdown">

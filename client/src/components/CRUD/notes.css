@@ -586,6 +586,9 @@ button:disabled {
   z-index: 2;
   /* Allow highlights to show through */
   background: transparent;
+  /* Add this to ensure text selection is enabled */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .rich-editor[contenteditable]:empty:before {
