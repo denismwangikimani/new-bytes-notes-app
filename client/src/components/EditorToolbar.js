@@ -153,25 +153,25 @@ const EditorToolbar = ({
   ];
 
   const drawingColors = [
-    "#000000",
-    "#ef4444",
-    "#f97316",
-    "#eab308",
-    "#84cc16",
-    "#22c55e",
-    "#14b8a6",
-    "#06b6d4",
-    "#3b82f6",
-    "#8b5cf6",
-    "#d946ef",
-    "#ec4899",
-    "#ffffff",
-    "#6b7280",
-    "#facc15",
-    "#4ade80",
-    "#67e8f9",
-    "#a5b4fc",
-    "#f0abfc",
+    "#000000", // Black
+    "#ef4444", // Red
+    "#f97316", // Orange
+    "#eab308", // Yellow - great for highlighting
+    "#84cc16", // Lime green
+    "#22c55e", // Green
+    "#14b8a6", // Teal
+    "#06b6d4", // Cyan - good for highlighting
+    "#3b82f6", // Blue
+    "#8b5cf6", // Purple
+    "#d946ef", // Magenta - good for highlighting
+    "#ec4899", // Pink
+    "#ffffff", // White
+    "#6b7280", // Gray
+    "#facc15", // Bright yellow - excellent for highlighting
+    "#4ade80", // Bright green
+    "#67e8f9", // Light cyan
+    "#a5b4fc", // Light purple
+    "#f0abfc", // Light pink - great for highlighting
   ];
 
   const handlePenIconClick = () => {
@@ -183,8 +183,16 @@ const EditorToolbar = ({
     const pen = pens.find((p) => p.type === newPenType);
     if (pen) {
       onSetPenType(newPenType);
-      onSetPenSize(pen.defaultSize); // Reset to default size
+      onSetPenSize(pen.defaultSize);
       onSetIsEraser(false);
+
+      // UPDATED: For highlighter, show instruction about unified highlighting
+      if (newPenType === "highlighter") {
+        // Don't show alert anymore, just activate the highlighter
+        console.log(
+          "Highlighter selected - can highlight both typed and handwritten text"
+        );
+      }
     }
   };
 
@@ -496,7 +504,11 @@ const EditorToolbar = ({
   );
 
   return (
-    <div className={`editor-toolbar ${isKeyboardVisible ? "keyboard-visible" : ""}`}>
+    <div
+      className={`editor-toolbar ${
+        isKeyboardVisible ? "keyboard-visible" : ""
+      }`}
+    >
       <div className="toolbar-inner">
         <button
           className={`toolbar-button${isDrawingMode ? " active" : ""}`}
@@ -509,10 +521,18 @@ const EditorToolbar = ({
 
         {isDrawingMode ? (
           <>
-            <button className="toolbar-button" onClick={onUndoDrawing} title="Undo">
+            <button
+              className="toolbar-button"
+              onClick={onUndoDrawing}
+              title="Undo"
+            >
               <Undo size={18} />
             </button>
-            <button className="toolbar-button" onClick={onRedoDrawing} title="Redo">
+            <button
+              className="toolbar-button"
+              onClick={onRedoDrawing}
+              title="Redo"
+            >
               <Redo size={18} />
             </button>
             <div className="toolbar-divider"></div>
@@ -521,17 +541,19 @@ const EditorToolbar = ({
             {pens.map((p) => (
               <button
                 key={p.type}
-                className={`toolbar-button ${penType === p.type && !isEraser ? "active" : ""}`}
+                className={`toolbar-button ${
+                  penType === p.type && !isEraser ? "active" : ""
+                }`}
                 onClick={() => handlePenTypeChange(p.type)}
                 title={p.name}
               >
                 {p.icon}
               </button>
             ))}
-            
+
             <button
               className={`toolbar-button ${isEraser ? "active" : ""}`}
-              onClick={() => onSetIsEraser(e => !e)}
+              onClick={() => onSetIsEraser((e) => !e)}
               title="Eraser"
             >
               <Eraser size={18} />
@@ -561,21 +583,26 @@ const EditorToolbar = ({
               <button
                 ref={shapeButtonRef}
                 className="toolbar-button"
-                onClick={() => setShowShapeMenu(s => !s)}
+                onClick={() => setShowShapeMenu((s) => !s)}
                 title="Draw Shape"
               >
-                {shapes.find(s => s.type === shape)?.icon || <Square size={18} />}
+                {shapes.find((s) => s.type === shape)?.icon || (
+                  <Square size={18} />
+                )}
                 <ChevronDown size={14} />
               </button>
               {showShapeMenu && (
                 <div ref={shapeMenuRef} className="dropdown-menu">
-                  {shapes.map(s => (
+                  {shapes.map((s) => (
                     <button
                       key={s.type}
                       className="dropdown-item"
-                      onClick={() => { onSetShape(s.type); setShowShapeMenu(false); }}
+                      onClick={() => {
+                        onSetShape(s.type);
+                        setShowShapeMenu(false);
+                      }}
                     >
-                      {s.icon} <span style={{marginLeft: 8}}>{s.name}</span>
+                      {s.icon} <span style={{ marginLeft: 8 }}>{s.name}</span>
                     </button>
                   ))}
                 </div>
@@ -587,7 +614,7 @@ const EditorToolbar = ({
               <button
                 ref={colorButtonRef}
                 className="toolbar-button"
-                onClick={() => setShowColorPalette(s => !s)}
+                onClick={() => setShowColorPalette((s) => !s)}
                 title="Pen Color"
               >
                 <div
@@ -601,37 +628,57 @@ const EditorToolbar = ({
                 ></div>
               </button>
               {showColorPalette && (
-                <div ref={colorPaletteRef} className="dropdown-menu color-palette-menu">
-                  {drawingColors.map(c => (
+                <div
+                  ref={colorPaletteRef}
+                  className="dropdown-menu color-palette-menu"
+                >
+                  {drawingColors.map((c) => (
                     <button
                       key={c}
                       className="color-palette-item"
-                      style={{backgroundColor: c}}
-                      onClick={() => { onSetPenColor(c); setShowColorPalette(false); }}
+                      style={{ backgroundColor: c }}
+                      onClick={() => {
+                        onSetPenColor(c);
+                        setShowColorPalette(false);
+                      }}
                     />
                   ))}
                 </div>
               )}
             </div>
 
-            <button className="toolbar-button" onClick={onResetDrawing} title="Clear Canvas">
+            <button
+              className="toolbar-button"
+              onClick={onResetDrawing}
+              title="Clear Canvas"
+            >
               <Trash2 size={18} />
             </button>
             <div className="toolbar-divider"></div>
 
-            <button className="toolbar-button" onClick={onCalculate} title="Calculate with AI">
+            <button
+              className="toolbar-button"
+              onClick={onCalculate}
+              title="Calculate with AI"
+            >
               <Calculator size={18} />
             </button>
             <div className="toolbar-divider"></div>
 
-            <button className="toolbar-button" onClick={() => handleFormat("image")} title="Insert Image">
+            <button
+              className="toolbar-button"
+              onClick={() => handleFormat("image")}
+              title="Insert Image"
+            >
               <Image size={18} />
             </button>
           </>
         ) : (
           <>
             {primaryTools}
-            <div className={`secondary-tools ${showAllTools ? "expanded" : ""}`}>
+            <div
+              className={`secondary-tools ${showAllTools ? "expanded" : ""}`}
+            >
               {secondaryTools}
             </div>
             <button

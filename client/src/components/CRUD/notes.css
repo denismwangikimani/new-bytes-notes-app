@@ -137,12 +137,16 @@
   flex-direction: column;
   overflow-y: auto;
   padding: 1rem 1.5rem;
-  padding-bottom: 0;
+  padding-bottom: 60px;
   position: relative;
   max-height: calc(100vh - 40px);
   max-width: 100%;
   overflow-x: hidden;
   box-sizing: border-box;
+  z-index: 1;
+  width: 100vw;
+  max-width: 100vw;
+  overflow-x: hidden;
 }
 
 .editor-title {
@@ -366,16 +370,6 @@ button:disabled {
   width: 100%;
 }
 
-.editor-content-wrapper {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  padding: 1rem 1.5rem;
-  padding-bottom: 60px;
-  position: relative;
-}
-
 /* Update empty state styles */
 .empty-state-content {
   flex: 1;
@@ -588,6 +582,10 @@ button:disabled {
   resize: none;
   overflow-y: auto;
   line-height: 1.5;
+  position: relative;
+  z-index: 2;
+  /* Allow highlights to show through */
+  background: transparent;
 }
 
 .rich-editor[contenteditable]:empty:before {
@@ -616,6 +614,56 @@ button:disabled {
 .rich-editor ul,
 .rich-editor ol {
   padding-left: 30px;
+}
+
+/* Add to notes.css */
+
+/* Highlighted text styles */
+.rich-editor span[style*="background-color"] {
+  padding: 2px 0;
+  border-radius: 2px;
+  /* Ensure text remains readable */
+  color: inherit;
+}
+
+/* Specific highlight colors for better readability */
+.rich-editor span[style*="background-color: #ffff00"],
+.rich-editor span[style*="background-color: #facc15"] {
+  color: #000000; /* Black text on yellow */
+}
+
+.rich-editor span[style*="background-color: #f97316"],
+.rich-editor span[style*="background-color: #ef4444"] {
+  color: #ffffff; /* White text on orange/red */
+}
+
+.rich-editor span[style*="background-color: #22c55e"],
+.rich-editor span[style*="background-color: #84cc16"] {
+  color: #000000; /* Black text on green */
+}
+
+.rich-editor span[style*="background-color: #3b82f6"],
+.rich-editor span[style*="background-color: #06b6d4"] {
+  color: #ffffff; /* White text on blue */
+}
+
+.rich-editor span[style*="background-color: #8b5cf6"],
+.rich-editor span[style*="background-color: #d946ef"] {
+  color: #ffffff; /* White text on purple/magenta */
+}
+
+.rich-editor span[style*="background-color: #ec4899"],
+.rich-editor span[style*="background-color: #f0abfc"] {
+  color: #000000; /* Black text on pink */
+}
+
+/* Selection highlighting */
+.rich-editor ::selection {
+  background-color: rgba(59, 130, 246, 0.3);
+}
+
+.rich-editor ::-moz-selection {
+  background-color: rgba(59, 130, 246, 0.3);
 }
 
 /* Media container styles */
@@ -925,12 +973,6 @@ button:disabled {
   }
 
   /* Fix scrollable content on mobile */
-  .editor-content-wrapper {
-    width: 100vw;
-    max-width: 100vw;
-    padding: 1rem;
-    overflow-x: hidden;
-  }
 
   .editor-header {
     padding: 0.5rem;
@@ -967,6 +1009,27 @@ button:disabled {
 .drawing-canvas {
   /* Prevents default touch actions like scrolling or zooming when drawing on touch devices */
   touch-action: none;
+  /* UPDATED: Ensure canvas allows text to show through highlights */
+  mix-blend-mode: normal;
+  /* Ensure the canvas doesn't interfere with text selection when not in drawing mode */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* UPDATED: Better layering for highlighter mode */
+.drawing-canvas[style*="z-index: 5"] {
+  /* Highlighter mode - allow text selection while still enabling canvas drawing */
+  pointer-events: auto;
+}
+
+.drawing-canvas[style*="z-index: 10"] {
+  /* Regular drawing mode - canvas takes priority */
+  pointer-events: auto;
+}
+
+/* When not in drawing mode, canvas should not interfere */
+.drawing-canvas[style*="pointer-events: none"] {
+  z-index: 1;
 }
 
 .canvas-result-sticky {

@@ -280,6 +280,28 @@
   border: none;
 }
 
+.highlighter-instructions {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  background-color: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 4px;
+  margin: 0 4px;
+}
+
+.highlighter-instructions span {
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+/* Make the highlighter button more prominent when selected */
+.toolbar-button.active[title*="Highlighter"] {
+  background-color: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
 /* Mobile optimization */
 @media (max-width: 768px) {
   /* Keep normal sticky position by default, even on mobile */
@@ -305,6 +327,10 @@
 
   .toolbar-separator {
     margin: 0 4px;
+  }
+
+  .highlighter-instructions {
+    display: none; /* Hide on mobile to save space */
   }
 }
 

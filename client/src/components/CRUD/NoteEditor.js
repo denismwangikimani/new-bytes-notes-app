@@ -46,8 +46,7 @@ import { withHistory } from "slate-history";
 import { isHotkey } from "is-hotkey";
 import escapeHtml from "escape-html";
 
-// --- (Keep all your existing deserialize/serialize functions here) ---
-// ...
+// --- Deserialize/Serialize Functions ---
 const ELEMENT_TAGS = {
   A: (el) => ({
     type: "link",
@@ -67,10 +66,8 @@ const ELEMENT_TAGS = {
   PRE: (el) => ({ type: "code", children: deserializeChildren(el) }),
   UL: (el) => ({ type: "bulleted-list", children: deserializeChildren(el) }),
   DIV: (el) => {
-    // Check if this is a media container
     if (el.classList.contains("media-container")) {
       const dataType = el.getAttribute("data-type");
-
       if (dataType === "image") {
         const img = el.querySelector("img");
         if (img) {
@@ -103,8 +100,6 @@ const ELEMENT_TAGS = {
         };
       }
     }
-
-    // Default div handling
     return { type: "paragraph", children: deserializeChildren(el) };
   },
 };
@@ -118,30 +113,17 @@ const TEXT_TAGS = {
   STRONG: () => ({ bold: true }),
   U: () => ({ underline: true }),
   SPAN: (el) => {
-    // Handle styles from spans
     const style = el.getAttribute("style") || "";
     const marks = {};
     const colorMatch = style.match(/color:\s*([^;]+);?/);
     const bgColorMatch = style.match(/background-color:\s*([^;]+);?/);
-    const fontStyleMatch = style.match(/font-style:\s*italic;?/);
-    const fontWeightMatch = style.match(/font-weight:\s*bold;?/);
-    const textDecorationMatch = style.match(/text-decoration:\s*underline;?/);
-    const textDecorationLineThroughMatch = style.match(
-      /text-decoration:\s*line-through;?/
-    );
     const fontFamilyMatch = style.match(/font-family:\s*([^;]+);?/);
     const fontSizeMatch = style.match(/font-size:\s*([^;]+);?/);
-
     if (colorMatch) marks.textColor = colorMatch[1].trim();
     if (bgColorMatch) marks.backgroundColor = bgColorMatch[1].trim();
-    if (fontStyleMatch) marks.italic = true;
-    if (fontWeightMatch) marks.bold = true;
-    if (textDecorationMatch) marks.underline = true;
-    if (textDecorationLineThroughMatch) marks.strikethrough = true;
     if (fontFamilyMatch)
-      marks.fontFamily = fontFamilyMatch[1].replace(/['"]/g, "").trim();
+      marks.fontFamily = fontFamilyMatch[1].replace(/["']/g, "").trim();
     if (fontSizeMatch) marks.fontSize = fontSizeMatch[1].trim();
-
     return marks;
   },
 };
@@ -150,31 +132,21 @@ const deserializeChildren = (parent) => {
   return Array.from(parent.childNodes)
     .map((node) => deserializeNode(node))
     .flat()
-    .filter((node) => node !== null);
+    .filter(Boolean);
 };
 
 const deserializeNode = (el) => {
   if (el.nodeType === 3) {
-    // Text node
     return el.textContent.trim() === "" ? null : { text: el.textContent };
   } else if (el.nodeType !== 1) {
-    // Not an element node
     return null;
   }
-
   const nodeName = el.nodeName.toUpperCase();
-
-  // Handle BR tags as newlines within text, or null if they create empty lines between blocks
-  if (nodeName === "BR") {
-    return null;
-  }
-
+  if (nodeName === "BR") return null;
   let children = deserializeChildren(el);
-
   if (children.length === 0) {
     children = [{ text: "" }];
   }
-
   const elementFn = ELEMENT_TAGS[nodeName];
   if (elementFn) {
     const node = elementFn(el);
@@ -190,7 +162,6 @@ const deserializeNode = (el) => {
     }
     return node;
   }
-
   const markFn = TEXT_TAGS[nodeName];
   if (markFn) {
     const marks = markFn(el);
@@ -201,150 +172,77 @@ const deserializeNode = (el) => {
       return child;
     });
   }
-
   return children;
-};
-
-const purifyConfig = {
-  ADD_ATTR: [
-    "target",
-    "contenteditable",
-    "autocapitalize",
-    "autocorrect",
-    "spellcheck",
-    "data-gramm",
-    "style",
-    "data-type",
-    "data-filename",
-    "data-size",
-    "data-content-type",
-  ],
-  ADD_TAGS: ["div", "span"],
-  USE_PROFILES: { html: true },
-  ALLOW_DATA_ATTR: true,
 };
 
 const deserialize = (htmlString) => {
   if (!htmlString || !htmlString.trim()) {
     return [{ type: "paragraph", children: [{ text: "" }] }];
   }
-  const sanitizedHtml = DOMPurify.sanitize(htmlString, purifyConfig);
+  const sanitizedHtml = DOMPurify.sanitize(htmlString, {
+    USE_PROFILES: { html: true },
+    ADD_TAGS: ["div", "span"],
+    ADD_ATTR: [
+      "style",
+      "data-type",
+      "data-filename",
+      "data-size",
+      "data-content-type",
+      "target",
+    ],
+  });
   const parsed = new DOMParser().parseFromString(sanitizedHtml, "text/html");
-  const body = parsed.body;
-
-  if (!body || (!body.hasChildNodes() && !body.textContent?.trim())) {
-    return [{ type: "paragraph", children: [{ text: "" }] }];
-  }
-
-  const slateNodes = deserializeChildren(body);
-
-  const ensureBlocks = (nodes) => {
-    const wrappedNodes = [];
-    let currentParagraph = null;
-    const dummyEditor = createEditor();
-
-    for (const node of nodes) {
-      if (node === null) continue;
-      const isInlineNode =
-        Text.isText(node) ||
-        (SlateElement.isElement(node) && dummyEditor.isInline(node));
-
-      if (isInlineNode) {
-        if (!currentParagraph) {
-          currentParagraph = { type: "paragraph", children: [] };
-        }
-        currentParagraph.children.push(node);
-      } else {
-        if (currentParagraph) {
-          if (currentParagraph.children.length === 0) {
-            currentParagraph.children = [{ text: "" }];
-          }
-          wrappedNodes.push(currentParagraph);
-          currentParagraph = null;
-        }
-        if (SlateElement.isElement(node) && !dummyEditor.isVoid(node)) {
-          if (!node.children || node.children.length === 0) {
-            node.children = [{ text: "" }];
-          }
-        }
-        wrappedNodes.push(node);
-      }
-    }
-    if (currentParagraph) {
-      if (currentParagraph.children.length === 0) {
-        currentParagraph.children = [{ text: "" }];
-      }
-      wrappedNodes.push(currentParagraph);
-    }
-    return wrappedNodes.length > 0
-      ? wrappedNodes
-      : [{ type: "paragraph", children: [{ text: "" }] }];
-  };
-
-  const finalNodes = ensureBlocks(slateNodes);
-
-  if (
-    finalNodes.length === 0 ||
-    finalNodes.every(
-      (node) =>
-        SlateElement.isElement(node) &&
-        node.type === "paragraph" &&
-        node.children.every((child) => Text.isText(child) && child.text === "")
-    )
-  ) {
-    return [{ type: "paragraph", children: [{ text: "" }] }];
-  }
-
-  return finalNodes;
+  const slateNodes = deserializeChildren(parsed.body);
+  return slateNodes.length > 0
+    ? slateNodes
+    : [{ type: "paragraph", children: [{ text: "" }] }];
 };
 
 const serializeNode = (node) => {
   if (Text.isText(node)) {
     let string = escapeHtml(node.text);
-    if (node.code) string = `<code>${string}</code>`;
+    if (node.bold) string = `<strong>${string}</strong>`;
     if (node.italic) string = `<em>${string}</em>`;
     if (node.underline) string = `<u>${string}</u>`;
     if (node.strikethrough) string = `<s>${string}</s>`;
-    if (node.bold) string = `<strong>${string}</strong>`;
+    if (node.code) string = `<code>${string}</code>`;
 
     const styles = {};
-    if (node.fontFamily) styles["font-family"] = node.fontFamily;
-    if (node.fontSize) styles["font-size"] = node.fontSize;
     if (node.textColor) styles.color = node.textColor;
     if (node.backgroundColor) styles["background-color"] = node.backgroundColor;
-
+    if (node.fontFamily) styles["font-family"] = node.fontFamily;
+    if (node.fontSize) styles["font-size"] = node.fontSize;
     if (Object.keys(styles).length > 0) {
       const styleString = Object.entries(styles)
         .map(([k, v]) => `${k}: ${v};`)
         .join(" ");
       string = `<span style="${styleString}">${string}</span>`;
     }
-
     return string;
   }
 
   const children = node.children.map((n) => serializeNode(n)).join("");
-  const style = node.align ? ` style="text-align: ${node.align};"` : "";
+  const style = node.align ? `style="text-align: ${node.align};"` : "";
 
   switch (node.type) {
     case "paragraph":
-      return `<p${style}>${children || "&nbsp;"}</p>`;
+      return `<p ${style}>${children || "&nbsp;"}</p>`;
     case "heading-one":
-      return `<h1${style}>${children}</h1>`;
+      return `<h1 ${style}>${children}</h1>`;
     case "heading-two":
-      return `<h2${style}>${children}</h2>`;
+      return `<h2 ${style}>${children}</h2>`;
     case "heading-three":
-      return `<h3${style}>${children}</h3>`;
+      return `<h3 ${style}>${children}</h3>`;
     case "list-item":
-      return `<li${style}>${children}</li>`;
+      return `<li ${style}>${children}</li>`;
     case "numbered-list":
-      return `<ol${style}>${children}</ol>`;
+      return `<ol ${style}>${children}</ol>`;
     case "bulleted-list":
-      return `<ul${style}>${children}</ul>`;
+      return `<ul ${style}>${children}</ul>`;
     case "block-quote":
-      return `<blockquote${style}>${children}</blockquote>`;
+      return `<blockquote ${style}>${children}</blockquote>`;
     case "code":
-      return `<pre${style}><code>${children}</code></pre>`;
+      return `<pre ${style}><code>${children}</code></pre>`;
     case "link":
       return `<a href="${escapeHtml(
         node.url
@@ -352,42 +250,33 @@ const serializeNode = (node) => {
     case "image":
       return `<div data-type="image" class="media-container"><img src="${escapeHtml(
         node.url
-      )}" alt="${escapeHtml(node.alt || "")}" /><p></p></div>`;
+      )}" alt="${escapeHtml(node.alt || "")}" /></div>`;
     case "video":
       return `<div data-type="video" class="media-container"><video controls src="${escapeHtml(
         node.url
-      )}"${
-        node.poster ? ` poster="${escapeHtml(node.poster)}"` : ""
-      }></video><p></p></div>`;
+      )}"></video></div>`;
     case "file":
-      return `<div data-type="file" class="media-container file-container" data-filename="${escapeHtml(
+      return `<div data-type="file" class="media-container" data-filename="${escapeHtml(
         node.filename
-      )}" data-size="${node.size}" data-content-type="${escapeHtml(
-        node.contentType || ""
-      )}"><a href="${escapeHtml(node.url)}">${escapeHtml(
-        node.filename
-      )}</a><p></p></div>`;
+      )}" data-size="${node.size}"><a href="${escapeHtml(
+        node.url
+      )}">${escapeHtml(node.filename)}</a></div>`;
     default:
       return children;
   }
 };
 
 const serialize = (value) => {
-  if (!Array.isArray(value)) {
-    console.error("Invalid Slate value for serialization:", value);
-    return "";
-  }
-  return value.map((n) => serializeNode(n)).join("");
+  if (!Array.isArray(value)) return "";
+  return value.map(serializeNode).join("");
 };
 
 const withMedia = (editor) => {
-  const { isVoid, insertBreak, normalizeNode } = editor;
-
-  editor.isVoid = (element) => {
-    return ["image", "video", "file", "drawing"].includes(element.type)
+  const { isVoid, insertBreak } = editor;
+  editor.isVoid = (element) =>
+    ["image", "video", "file", "drawing"].includes(element.type)
       ? true
       : isVoid(element);
-  };
 
   editor.insertBreak = () => {
     const { selection } = editor;
@@ -407,40 +296,6 @@ const withMedia = (editor) => {
       }
     }
     insertBreak();
-  };
-
-  editor.normalizeNode = (entry) => {
-    const [node, path] = entry;
-    if (SlateElement.isElement(node) && editor.isVoid(node)) {
-      const parent = Editor.parent(editor, path);
-      const isLastChild =
-        path[path.length - 1] === parent[0].children.length - 1;
-      if (isLastChild) {
-        Transforms.insertNodes(
-          editor,
-          { type: "paragraph", children: [{ text: "" }] },
-          { at: Path.next(path) }
-        );
-        return;
-      } else {
-        const nextNode = Editor.node(editor, Path.next(path));
-        if (
-          nextNode &&
-          SlateElement.isElement(nextNode[0]) &&
-          editor.isVoid(nextNode[0])
-        ) {
-          Transforms.insertNodes(
-            editor,
-            { type: "paragraph", children: [{ text: "" }] },
-            { at: Path.next(path) }
-          );
-          return;
-        }
-      }
-    }
-    if (normalizeNode) {
-      normalizeNode(entry);
-    }
   };
 
   return editor;
@@ -472,15 +327,14 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [isMediaDialogOpen, setIsMediaDialogOpen] = useState(false);
   const [mediaDialogType, setMediaDialogType] = useState(null);
 
-  // --- New Integrated Drawing State ---
+  // --- Drawing State ---
   const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [penColor, setPenColor] = useState("#000000");
-  // Pen size is now managed automatically by penType
-  const [isEraser, setIsEraser] = useState(false);
-  const [isCanvasDirty, setIsCanvasDirty] = useState(false);
-  const [penSize, setPenSize] = useState(2); // Default pen size
+  const [penSize, setPenSize] = useState(2);
   const [penType, setPenType] = useState("ballpoint");
-  const [shape, setShape] = useState("rect"); // Default shape is now rectangle
+  const [isEraser, setIsEraser] = useState(false);
+  const [shape, setShape] = useState("pen");
+  const [isCanvasDirty, setIsCanvasDirty] = useState(false);
   const [calculationResult, setCalculationResult] = useState(null);
   const [isCalculating, setIsCalculating] = useState(false);
 
@@ -494,10 +348,15 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const shapeStartPointRef = useRef(null);
   const canvasSnapshotBeforeShapeRef = useRef(null);
 
-  const editor = useMemo(() => {
-    const e = withMedia(withHistory(withReact(createEditor())));
-    return e;
-  }, [note?._id]);
+  // --- Enhanced refs for realistic pen physics ---
+  const lastVelocityRef = useRef(0);
+  const lastTimestampRef = useRef(performance.now());
+  const pressureRef = useRef(0.5);
+
+  const editor = useMemo(
+    () => withMedia(withHistory(withReact(createEditor()))),
+    [note?._id]
+  );
 
   const initialValue = useMemo(() => {
     const deserialized = deserialize(note?.content);
@@ -509,17 +368,10 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [slateValue, setSlateValue] = useState(initialValue);
 
   useEffect(() => {
-    if (isAutoSaving.current) {
-      return;
-    }
-    const newSlateValue = deserialize(note?.content);
-    setSlateValue(
-      Array.isArray(newSlateValue) && newSlateValue.length > 0
-        ? newSlateValue
-        : [{ type: "paragraph", children: [{ text: "" }] }]
-    );
+    if (isAutoSaving.current) return;
+    setSlateValue(deserialize(note?.content || ""));
     setTitle(note?.title || "");
-  }, [note?._id, note?.content, note?.title]);
+  }, [note?._id]);
 
   const { isSidebarOpen } = useSidebar();
   const updateTimeoutRef = useRef(null);
@@ -533,55 +385,221 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
       if (note && (contentChanged || titleChanged || isCanvasDirty)) {
         isAutoSaving.current = true;
-
         const updatePayload = {
           content: serialize(slateValue),
           title,
         };
-
         if (isCanvasDirty && canvasRef.current) {
           updatePayload.canvasImage = canvasRef.current.toDataURL("image/png");
         }
-
         onUpdate(note._id, updatePayload)
-          .then(() => {
-            if (isCanvasDirty) {
-              setIsCanvasDirty(false);
-            }
-          })
+          .then(() => setIsCanvasDirty(false))
           .finally(() => {
             isAutoSaving.current = false;
           });
       }
     }, 3000);
 
-    return () => {
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current);
-      }
-    };
-  }, [slateValue, title, note, onUpdate, editor, isCanvasDirty]);
+    return () => clearTimeout(updateTimeoutRef.current);
+  }, [slateValue, title, note, onUpdate, isCanvasDirty]);
 
   // --- Drawing Logic ---
-  const hexToRgba = (hex, alpha) => {
-    if (!hex.startsWith("#")) return hex;
+  const hexToRgba = useCallback((hex, alpha) => {
+    if (!hex?.startsWith("#")) return hex;
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
     const b = parseInt(hex.slice(5, 7), 16);
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  };
+  }, []);
 
-  // Enhanced drawing logic with better pen behaviors
+  // --- Enhanced pen properties function for realistic effects ---
+  const getPenProperties = useCallback(
+    (type, color, size, velocity = 0, pressure = 0.5) => {
+      const baseProps = {
+        strokeStyle: color,
+        lineWidth: size,
+        lineCap: "round",
+        lineJoin: "round",
+        opacity: 1.0,
+        blend: "source-over",
+      };
+
+      switch (type) {
+        case "fountain":
+          // Fountain pen: Varies significantly with pressure and speed
+          const fountainWidth =
+            size *
+            (0.5 + pressure * 1.0) *
+            (1.2 - Math.min(velocity * 0.8, 0.6));
+          return {
+            ...baseProps,
+            lineWidth: Math.max(
+              size * 0.3,
+              Math.min(fountainWidth, size * 2.0)
+            ),
+            opacity: 0.9,
+            lineCap: "round",
+          };
+
+        case "calligraphy":
+          // Calligraphy: Sharp edges, varies dramatically with speed
+          const calligraphyWidth =
+            size *
+            (0.8 + pressure * 0.7) *
+            (1.5 - Math.min(velocity * 1.2, 1.0));
+          return {
+            ...baseProps,
+            lineWidth: Math.max(
+              size * 0.2,
+              Math.min(calligraphyWidth, size * 3.0)
+            ),
+            lineCap: "butt", // Sharp edges
+            lineJoin: "miter",
+            opacity: 0.95,
+          };
+
+        case "pencil":
+          // Pencil: Subtle variations, graphite-like
+          const pencilWidth =
+            size *
+            (0.7 + pressure * 0.4) *
+            (1.1 - Math.min(velocity * 0.3, 0.3));
+          return {
+            ...baseProps,
+            strokeStyle: hexToRgba(color, 0.7 + pressure * 0.2),
+            lineWidth: Math.max(size * 0.6, Math.min(pencilWidth, size * 1.4)),
+            opacity: 0.7 + pressure * 0.2,
+          };
+
+        case "highlighter":
+          // UPDATED: Consistent opacity highlighter for canvas drawing
+          return {
+            ...baseProps,
+            strokeStyle: hexToRgba(color, 0.3), // Fixed opacity
+            lineWidth: size * 1.2,
+            lineCap: "butt",
+            lineJoin: "round",
+            opacity: 0.3, // Fixed opacity - no variation
+            blend: "multiply",
+            globalCompositeOperation: "destination-over",
+          };
+
+        case "ballpoint":
+        default:
+          // Ballpoint: Consistent, reliable
+          return {
+            ...baseProps,
+            lineWidth: size,
+            opacity: 1.0,
+          };
+      }
+    },
+    [hexToRgba]
+  );
+
+  // --- NEW: Text highlighting function ---
+  const handleTextHighlight = useCallback(
+    (color) => {
+      const { selection } = editor;
+      
+      // If we have a text selection, highlight it
+      if (selection && !Range.isCollapsed(selection)) {
+        Transforms.setNodes(
+          editor,
+          { backgroundColor: color },
+          {
+            match: Text.isText,
+            split: true,
+            at: selection,
+          }
+        );
+        ReactEditor.focus(editor);
+        return;
+      }
+
+      // If no text selection, check if we have a DOM selection (for when clicking from canvas)
+      const domSelection = window.getSelection();
+      if (domSelection && !domSelection.isCollapsed) {
+        try {
+          // Get the selected text range
+          const range = domSelection.getRangeAt(0);
+          const selectedText = range.toString();
+          
+          if (selectedText.trim()) {
+            // Find the corresponding Slate selection
+            const slateRange = ReactEditor.toSlateRange(editor, range, {
+              exactMatch: false,
+              suppressThrow: true,
+            });
+            
+            if (slateRange) {
+              Transforms.setNodes(
+                editor,
+                { backgroundColor: color },
+                {
+                  match: Text.isText,
+                  split: true,
+                  at: slateRange,
+                }
+              );
+            }
+          }
+        } catch (error) {
+          console.log("Could not highlight DOM selection:", error);
+        }
+        
+        // Clear the DOM selection
+        domSelection.removeAllRanges();
+        ReactEditor.focus(editor);
+        return;
+      }
+
+      // If no selection at all, just set the mark for future typing
+      Editor.addMark(editor, "backgroundColor", color);
+    },
+    [editor]
+  );
+
+  // --- NEW: Remove text highlight function ---
+  const handleRemoveHighlight = useCallback(() => {
+    const { selection } = editor;
+    if (!selection) return;
+
+    if (Range.isCollapsed(selection)) {
+      // Remove highlight mark for future typing
+      Editor.removeMark(editor, "backgroundColor");
+    } else {
+      // Remove highlight from selected text
+      Transforms.unsetNodes(editor, "backgroundColor", {
+        match: Text.isText,
+        split: true,
+        at: selection,
+      });
+    }
+
+    ReactEditor.focus(editor);
+  }, [editor]);
+
   const drawShapeOnCanvas = useCallback(
     (ctx, start, end, color, size, shapeType) => {
-      // Get pen-specific properties
       const penProps = getPenProperties(penType, color, size);
 
-      ctx.strokeStyle = penProps.strokeStyle;
-      ctx.lineWidth = penProps.lineWidth;
-      ctx.lineCap = penProps.lineCap;
-      ctx.lineJoin = penProps.lineJoin;
-      ctx.globalAlpha = penProps.opacity;
+      // UPDATED: Handle highlighter shapes specially
+      if (penType === "highlighter") {
+        ctx.globalCompositeOperation = "destination-over"; // Draw behind existing content
+        ctx.globalAlpha = penProps.opacity;
+        ctx.strokeStyle = penProps.strokeStyle;
+        ctx.lineWidth = penProps.lineWidth;
+        ctx.lineCap = penProps.lineCap;
+        ctx.lineJoin = penProps.lineJoin;
+      } else {
+        ctx.strokeStyle = penProps.strokeStyle;
+        ctx.lineWidth = penProps.lineWidth;
+        ctx.lineCap = penProps.lineCap;
+        ctx.lineJoin = penProps.lineJoin;
+        ctx.globalAlpha = penProps.opacity;
+        ctx.globalCompositeOperation = penProps.blend || "source-over";
+      }
 
       ctx.beginPath();
       switch (shapeType) {
@@ -589,9 +607,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
           break;
         case "circle": {
-          const radius = Math.sqrt(
-            Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2)
-          );
+          const radius = Math.hypot(end.x - start.x, end.y - start.y);
           ctx.arc(start.x, start.y, radius, 0, 2 * Math.PI);
           ctx.stroke();
           break;
@@ -611,81 +627,11 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         default:
           break;
       }
-      ctx.globalAlpha = 1.0; // Reset alpha
+      ctx.globalAlpha = 1.0;
+      ctx.globalCompositeOperation = "source-over";
     },
-    [penType]
+    [getPenProperties, penType]
   );
-
-  // Enhanced pen properties function
-  const getPenProperties = useCallback((penType, color, userSize) => {
-    const baseProps = {
-      strokeStyle: color,
-      lineWidth: userSize,
-      lineCap: "round",
-      lineJoin: "round",
-      opacity: 1.0,
-      smoothness: 1.0,
-    };
-
-    switch (penType) {
-      case "fountain":
-        return {
-          ...baseProps,
-          lineWidth: userSize * 1.2, // Slightly thicker
-          lineCap: "round",
-          lineJoin: "round",
-          opacity: 0.9,
-          // Fountain pens have variable width based on pressure
-          variableWidth: true,
-          minWidth: userSize * 0.7,
-          maxWidth: userSize * 1.8,
-        };
-
-      case "calligraphy":
-        return {
-          ...baseProps,
-          lineWidth: userSize * 1.5,
-          lineCap: "butt", // Sharp edges for calligraphy
-          lineJoin: "miter",
-          opacity: 0.95,
-          variableWidth: true,
-          minWidth: userSize * 0.5,
-          maxWidth: userSize * 2.5,
-        };
-
-      case "pencil":
-        return {
-          ...baseProps,
-          strokeStyle: hexToRgba(color, 0.7), // More transparent
-          lineWidth: userSize * 0.8,
-          lineCap: "round",
-          lineJoin: "round",
-          opacity: 0.7,
-          texture: true, // Add slight texture
-        };
-
-      case "highlighter":
-        return {
-          ...baseProps,
-          strokeStyle: hexToRgba(color, 0.3), // Very transparent
-          lineWidth: userSize * 3, // Much wider
-          lineCap: "butt", // Flat edges like real highlighter
-          lineJoin: "round", // Smooth corners
-          opacity: 0.3,
-          blend: "multiply", // Realistic highlighter blending
-        };
-
-      case "ballpoint":
-      default:
-        return {
-          ...baseProps,
-          lineWidth: userSize,
-          lineCap: "round",
-          lineJoin: "round",
-          opacity: 1.0,
-        };
-    }
-  }, []);
 
   const handleCalculate = async () => {
     if (!canvasRef.current || isCalculating) return;
@@ -704,31 +650,8 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   };
 
   const formatResult = (result) => {
-    if (!result) return "";
-    try {
-      let arr = result;
-      if (typeof result === "string") {
-        // Attempt to fix common JSON issues from AI before parsing
-        const correctedString = result
-          .replace(/'/g, '"')
-          .replace(/(\w+):/g, '"$1":');
-        arr = JSON.parse(correctedString);
-      }
-      if (Array.isArray(arr)) {
-        return arr
-          .map((item) => {
-            if (item.expr && item.result !== undefined) {
-              return `${item.expr.replace(/\s+/g, "")}=${item.result}`;
-            }
-            return JSON.stringify(item);
-          })
-          .filter(Boolean)
-          .join("\n");
-      }
-      return result;
-    } catch (e) {
-      return result; // Return as is if parsing fails
-    }
+    // Simply return the result as a string, removing any JSON parsing.
+    return result || "";
   };
 
   const saveToHistory = useCallback(() => {
@@ -793,65 +716,154 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     if (!canvas || !wrapper) return;
 
     const resizeObserver = new ResizeObserver(() => {
-      const currentImageData = canvas.toDataURL();
+      const currentData = canvas.toDataURL();
       canvas.width = wrapper.scrollWidth;
       canvas.height = wrapper.scrollHeight;
       const ctx = canvas.getContext("2d");
-      drawImageOnCanvas(currentImageData, ctx);
+      drawImageOnCanvas(currentData, ctx);
     });
-
     resizeObserver.observe(wrapper);
 
     canvas.width = wrapper.scrollWidth;
     canvas.height = wrapper.scrollHeight;
-    const ctx = canvas.getContext("2d");
+
     if (note?.canvasImage) {
-      drawImageOnCanvas(note.canvasImage, ctx);
+      drawImageOnCanvas(note.canvasImage);
       drawingHistory.current = [note.canvasImage];
       historyIndex.current = 0;
     } else {
+      const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawingHistory.current = [canvas.toDataURL("image/png")];
+      drawingHistory.current = [canvas.toDataURL()];
       historyIndex.current = 0;
     }
 
     return () => resizeObserver.disconnect();
   }, [note?._id, drawImageOnCanvas]);
 
-  const getCoords = (e) => {
+  const getCoords = useCallback((e) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
     const rect = canvas.getBoundingClientRect();
     const clientX = e.clientX ?? e.touches?.[0]?.clientX;
     const clientY = e.clientY ?? e.touches?.[0]?.clientY;
     return { x: clientX - rect.left, y: clientY - rect.top };
-  };
+  }, []);
 
+  // --- COMPLETELY REWRITTEN: Apple Notes-style drawing logic ---
   const startDrawing = useCallback(
     (e) => {
       e.preventDefault();
       const canvas = canvasRef.current;
       if (!canvas) return;
 
-      saveToHistory();
+      // UPDATED: Handle highlighter mode for both text and canvas highlighting
+      if (penType === "highlighter" && !isEraser) {
+        // Check if we're clicking on text content
+        const target = e.target;
+        const editorContent = document.querySelector(".rich-editor");
 
+        // If clicking within the editor content area, enable text selection for highlighting
+        if (editorContent && editorContent.contains(target)) {
+          // Temporarily disable drawing mode to allow text selection
+          setIsDrawingMode(false);
+
+          // Set up text selection listener
+          setTimeout(() => {
+            const handleTextSelection = () => {
+              const selection = window.getSelection();
+              if (selection && !selection.isCollapsed) {
+                // Apply highlight to selected text
+                handleTextHighlight(penColor);
+                // Re-enable drawing mode after highlighting
+                setIsDrawingMode(true);
+              }
+            };
+
+            // Listen for text selection
+            document.addEventListener("mouseup", handleTextSelection, {
+              once: true,
+            });
+
+            // If no text is selected after a short delay, re-enable drawing mode
+            setTimeout(() => {
+              setIsDrawingMode(true);
+            }, 100);
+          }, 10);
+
+          return;
+        }
+        // If not clicking on text, continue with canvas highlighting (for handwritten content)
+      }
+
+      saveToHistory();
       isDrawingRef.current = true;
       const coords = getCoords(e);
       const ctx = canvas.getContext("2d");
+
+      // Get pressure if available (for stylus/Apple Pencil)
+      pressureRef.current = e.pressure || 0.5;
 
       if (shape !== "pen") {
         shapeStartPointRef.current = coords;
         canvasSnapshotBeforeShapeRef.current = canvas.toDataURL();
       } else {
+        const penProps = getPenProperties(
+          penType,
+          penColor,
+          penSize,
+          0,
+          pressureRef.current
+        );
+
+        // Handle eraser
+        if (isEraser) {
+          ctx.globalCompositeOperation = "destination-out";
+          ctx.globalAlpha = 1.0;
+          ctx.lineCap = "round";
+          ctx.lineWidth = penSize * 2;
+        } else if (penType === "highlighter") {
+          // UPDATED: Highlighter for handwritten content - draw behind existing content
+          ctx.globalCompositeOperation = "destination-over";
+          ctx.globalAlpha = penProps.opacity;
+          ctx.lineCap = penProps.lineCap;
+          ctx.lineJoin = penProps.lineJoin;
+          ctx.strokeStyle = penProps.strokeStyle;
+          ctx.lineWidth = penProps.lineWidth;
+        } else {
+          // Regular pens
+          ctx.globalCompositeOperation = penProps.blend || "source-over";
+          ctx.globalAlpha = penProps.opacity;
+          ctx.lineCap = penProps.lineCap;
+          ctx.lineJoin = penProps.lineJoin;
+          ctx.strokeStyle = penProps.strokeStyle;
+          ctx.lineWidth = penProps.lineWidth;
+        }
+
+        // Initialize tracking variables
         lastPositionRef.current = coords;
+        lastTimestampRef.current = performance.now();
+        lastVelocityRef.current = 0;
+
+        // Start the path
         ctx.beginPath();
         ctx.moveTo(coords.x, coords.y);
       }
     },
-    [shape, saveToHistory]
+    [
+      shape,
+      saveToHistory,
+      getCoords,
+      getPenProperties,
+      penType,
+      penColor,
+      penSize,
+      isEraser,
+      handleTextHighlight,
+    ]
   );
 
-  // Fixed drawing function with smooth highlighter
+  // --- COMPLETELY REWRITTEN: Smooth, Apple Notes-style drawing with highlighter support ---
   const draw = useCallback(
     (e) => {
       if (!isDrawingRef.current) return;
@@ -861,6 +873,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       const ctx = canvas.getContext("2d");
       const newPos = getCoords(e);
 
+      // Handle shapes
       if (shape !== "pen" && shapeStartPointRef.current) {
         const img = new Image();
         img.onload = () => {
@@ -879,62 +892,88 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         return;
       }
 
-      // Get pen properties
-      const penProps = getPenProperties(penType, penColor, penSize);
+      // Handle pen drawing
+      if (shape === "pen") {
+        // Calculate velocity for realistic pen behavior
+        const now = performance.now();
+        const timeDelta = Math.max(now - lastTimestampRef.current, 1);
+        const distance = Math.hypot(
+          newPos.x - lastPositionRef.current.x,
+          newPos.y - lastPositionRef.current.y
+        );
+        const currentVelocity = distance / timeDelta;
 
-      if (isEraser) {
-        ctx.globalCompositeOperation = "destination-out";
-        ctx.lineWidth = penSize * 2;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-      } else {
-        ctx.globalCompositeOperation = penProps.blend || "source-over";
-        ctx.strokeStyle = penProps.strokeStyle;
-        ctx.lineCap = penProps.lineCap;
-        ctx.lineJoin = penProps.lineJoin;
-        ctx.globalAlpha = penProps.opacity;
+        // Smooth the velocity to avoid jitter
+        const smoothedVelocity =
+          currentVelocity * 0.3 + lastVelocityRef.current * 0.7;
 
-        // Calculate pressure for variable width pens
-        const pressure =
-          e.pressure !== undefined && e.pressure > 0 ? e.pressure : 0.5;
+        // Update pressure if available
+        pressureRef.current = e.pressure || pressureRef.current;
 
-        if (penProps.variableWidth) {
-          const variableWidth =
-            penProps.minWidth +
-            (penProps.maxWidth - penProps.minWidth) * pressure;
-          ctx.lineWidth = variableWidth;
-        } else {
-          ctx.lineWidth = penProps.lineWidth;
+        if (!isEraser) {
+          // Get updated pen properties based on velocity and pressure
+          const penProps = getPenProperties(
+            penType,
+            penColor,
+            penSize,
+            smoothedVelocity,
+            pressureRef.current
+          );
+
+          // UPDATED: Don't change composite operation during drawing for highlighter
+          if (penType !== "highlighter") {
+            // Smoothly adjust line width for variable-width pens (not highlighter)
+            const targetWidth = penProps.lineWidth;
+            ctx.lineWidth = ctx.lineWidth * 0.7 + targetWidth * 0.3;
+
+            // Update other properties for non-highlighter pens
+            ctx.strokeStyle = penProps.strokeStyle;
+            ctx.globalAlpha = penProps.opacity;
+            ctx.globalCompositeOperation = penProps.blend;
+          }
+          // For highlighter, don't change properties during drawing to maintain smoothness
         }
+
+        // CRITICAL: This is the key to smooth, continuous lines
+        // We simply extend the current path to the new position
+        ctx.lineTo(newPos.x, newPos.y);
+        ctx.stroke();
+
+        // Update tracking variables
+        lastPositionRef.current = newPos;
+        lastTimestampRef.current = now;
+        lastVelocityRef.current = smoothedVelocity;
       }
-
-      // CRITICAL FIX for highlighter smoothness:
-      // Don't call beginPath() during drawing - only at the start
-      ctx.lineTo(newPos.x, newPos.y);
-      ctx.stroke();
-
-      // For smooth continuous lines, move the path to the current position
-      // without breaking the path
-      ctx.beginPath();
-      ctx.moveTo(newPos.x, newPos.y);
-
-      lastPositionRef.current = newPos;
     },
     [
-      isEraser,
-      penColor,
-      penSize,
-      penType,
+      isDrawingRef,
+      getCoords,
       shape,
       drawShapeOnCanvas,
+      penColor,
+      penSize,
       getPenProperties,
+      penType,
+      isEraser,
     ]
   );
 
+  // --- UPDATED: Clean stop drawing ---
   const stopDrawing = useCallback(() => {
     if (!isDrawingRef.current) return;
-    const ctx = canvasRef.current.getContext("2d");
-    ctx.closePath();
+
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      // End the current path
+      ctx.closePath();
+      // Reset to defaults to avoid affecting other operations
+      ctx.globalAlpha = 1.0;
+      ctx.globalCompositeOperation = "source-over";
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+    }
+
     isDrawingRef.current = false;
     shapeStartPointRef.current = null;
     canvasSnapshotBeforeShapeRef.current = null;
@@ -945,27 +984,39 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     const canvas = canvasRef.current;
     if (!canvas || !isDrawingMode) return;
 
-    const preventDefault = (e) => e.preventDefault();
-    document.body.addEventListener("touchmove", preventDefault, {
-      passive: false,
-    });
+    // UPDATED: Special handling for highlighter mode
+    if (penType === "highlighter") {
+      // Allow both text selection and canvas drawing
+      canvas.style.pointerEvents = "auto";
+      canvas.style.zIndex = "5"; // Lower than text, but higher than background
+    } else {
+      // Normal drawing mode
+      canvas.style.pointerEvents = "auto";
+      canvas.style.zIndex = "10";
+    }
 
+    // Use pointer events for better compatibility
     canvas.addEventListener("pointerdown", startDrawing);
     canvas.addEventListener("pointermove", draw);
     canvas.addEventListener("pointerup", stopDrawing);
     canvas.addEventListener("pointerleave", stopDrawing);
 
+    // Prevent scrolling on touch devices while drawing
+    const preventDefault = (e) => e.preventDefault();
+    document.body.addEventListener("touchmove", preventDefault, {
+      passive: false,
+    });
+
     return () => {
-      document.body.removeEventListener("touchmove", preventDefault);
       canvas.removeEventListener("pointerdown", startDrawing);
       canvas.removeEventListener("pointermove", draw);
       canvas.removeEventListener("pointerup", stopDrawing);
       canvas.removeEventListener("pointerleave", stopDrawing);
+      document.body.removeEventListener("touchmove", preventDefault);
     };
-  }, [isDrawingMode, startDrawing, draw, stopDrawing]);
+  }, [isDrawingMode, startDrawing, draw, stopDrawing, penType]);
 
-  // --- (Keep all your existing CustomEditor, handlers, renderElement, etc.) ---
-  // ...
+  // --- CustomEditor and other Slate functions ---
   const CustomEditor = useMemo(
     () => ({
       isMarkActive(editorInstance, format) {
@@ -1108,6 +1159,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     (props) => {
       const { element, attributes, children } = props;
       const style = element.align ? { textAlign: element.align } : {};
+
       switch (element.type) {
         case "drawing":
           return (
@@ -1245,9 +1297,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
                   muted={false}
                   autoPlay={false}
                   key={element.url}
-                  onLoadedData={(e) => {
-                    e.target.pause();
-                  }}
+                  onLoadedData={(e) => e.target.pause()}
                   onClick={(e) => {
                     if (isVideoFullscreen) e.stopPropagation();
                   }}
@@ -1311,15 +1361,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           );
       }
     },
-    [
-      editor,
-      fullscreenMedia,
-      toggleFullscreen,
-      formatFileSize,
-      setCurrentFileUrl,
-      setCurrentFileName,
-      setIsFileSidebarOpen,
-    ]
+    [editor, fullscreenMedia, toggleFullscreen, formatFileSize]
   );
 
   const renderLeaf = useCallback(({ attributes, children, leaf }) => {
@@ -1329,6 +1371,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     if (leaf.underline) el = <u>{el}</u>;
     if (leaf.strikethrough) el = <s>{el}</s>;
     if (leaf.code) el = <code>{el}</code>;
+
     const styles = {};
     if (leaf.fontFamily) styles.fontFamily = leaf.fontFamily;
     if (leaf.fontSize) styles.fontSize = leaf.fontSize;
@@ -1356,11 +1399,13 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       insertMedia(editorInstance, { type: "image", url, alt }),
     [insertMedia]
   );
+
   const insertVideo = useCallback(
     (editorInstance, url, poster = null) =>
       insertMedia(editorInstance, { type: "video", url, poster }),
     [insertMedia]
   );
+
   const insertFile = useCallback(
     (editorInstance, url, filename, size, contentType) =>
       insertMedia(editorInstance, {
@@ -1372,6 +1417,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
       }),
     [insertMedia]
   );
+
   const insertLink = useCallback((editorInstance, url) => {
     if (!url) return;
     const { selection } = editorInstance;
@@ -1427,15 +1473,29 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         setMediaDialogType(type);
         setIsMediaDialogOpen(true);
       };
+
       if (formatType === "link") {
         const url = window.prompt("Enter the URL of the link:");
         if (url) insertLink(editor, url);
         return;
       }
+
       if (["image", "video", "file"].includes(formatType)) {
         openMediaDialog(formatType);
         return;
       }
+
+      // UPDATED: Handle text highlighting - now only called from highlighter pen
+      if (formatType === "highlight") {
+        handleTextHighlight(value || penColor);
+        return;
+      }
+
+      if (formatType === "removeHighlight") {
+        handleRemoveHighlight();
+        return;
+      }
+
       switch (formatType) {
         case "bold":
         case "italic":
@@ -1474,7 +1534,14 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
           console.log("Slate formatting not implemented: ", formatType);
       }
     },
-    [editor, CustomEditor, insertLink]
+    [
+      editor,
+      CustomEditor,
+      insertLink,
+      handleTextHighlight,
+      handleRemoveHighlight,
+      penColor,
+    ]
   );
 
   const HOTKEYS = useMemo(
@@ -1531,7 +1598,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
     [editor]
   );
 
-  // ... (Keep all your AI/Modal handlers)
+  // AI and Modal handlers
   const handleAISubmit = async (prompt) => {
     setIsLoading(true);
     setAIResponse("");
@@ -1707,9 +1774,12 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
             left: 0,
             pointerEvents: isDrawingMode ? "auto" : "none",
             zIndex: 10,
+            touchAction: "none", // Prevents default touch behaviors
           }}
         />
       </div>
+
+      {/* AI Assistant and Modals */}
       <AIAssistant
         onActivateText={handleActivateText}
         onActivateRevision={handleActivateRevision}
