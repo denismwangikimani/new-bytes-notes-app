@@ -20,7 +20,7 @@ const noteSchema = new mongoose.Schema(
     },
     canvasImage: {
       type: String,
-      default: "", 
+      default: "",
     },
     createdAt: {
       type: Date,
@@ -35,6 +35,12 @@ const noteSchema = new mongoose.Schema(
       ref: "Group",
       default: null,
     },
+    pages: [
+      {
+        slateValue: { type: String }, // store as JSON string
+        canvasImage: { type: String }, // base64 image
+      },
+    ],
   },
   {
     timestamps: true,

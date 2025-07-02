@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import "./EditorToolbar.css";
 import MediaDialog from "./MediaDialog";
+// import { usePages } from "./pages/PageProvider";
 
 const EditorToolbar = ({
   onFormatText,
@@ -46,7 +47,7 @@ const EditorToolbar = ({
   penColor,
   onSetPenColor,
   penSize,
-  onSetPenSize, // Add penSize props
+  onSetPenSize, 
   isEraser,
   onSetIsEraser,
   onUndoDrawing,
@@ -59,6 +60,15 @@ const EditorToolbar = ({
   onCalculate,
   highlighterOpacity,
   onSetHighlighterOpacity,
+  // --- Accept Page Props ---
+  pageMode,
+  setPageMode,
+  pageType,
+  setPageType,
+  pages,
+  addPage,
+  currentPage,
+  setCurrentPage,
 }) => {
   const [showAllTools, setShowAllTools] = useState(false);
   const [showFontFamilyMenu, setShowFontFamilyMenu] = useState(false);
@@ -86,6 +96,18 @@ const EditorToolbar = ({
   const shapeButtonRef = useRef(null);
   const colorPaletteRef = useRef(null);
   const colorButtonRef = useRef(null);
+
+  // //page states
+  // const {
+  //   pageType,
+  //   setPageType,
+  //   pageMode,
+  //   setPageMode,
+  //   pages,
+  //   addPage,
+  //   currentPage,
+  //   setCurrentPage,
+  // } = usePages();
 
   const fontFamilies = [
     { name: "Arial", value: "Arial, sans-serif" },
@@ -314,6 +336,113 @@ const EditorToolbar = ({
         <Underline size={18} />
       </button>
       <div className="toolbar-divider"></div>
+      {/* Page Settings Controls */}
+        <div
+          className="toolbar-dropdown page-settings-dropdown"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "0 8px",
+            borderRadius: 6,
+            background: "#f7f7fa",
+            border: "1px solid #eee",
+            minHeight: 36,
+          }}
+        >
+          <span style={{ fontSize: 13, fontWeight: 500, marginRight: 8 }}>
+            Page
+          </span>
+          <select
+            value={pageType}
+            onChange={(e) => setPageType(e.target.value)}
+            className="toolbar-button"
+            style={{
+              minWidth: 80,
+              marginRight: 8,
+              background: "#fff",
+              border: "1px solid #ddd",
+              borderRadius: 4,
+              fontSize: 13,
+              padding: "2px 8px",
+            }}
+            title="Page Style"
+          >
+            <option value="blank">Blank</option>
+            <option value="lines">Lines</option>
+            <option value="grid">Grid</option>
+          </select>
+          <select
+            value={pageMode}
+            onChange={(e) => setPageMode(e.target.value)}
+            className="toolbar-button"
+            style={{
+              minWidth: 90,
+              marginRight: pageMode === "numbered" ? 8 : 0,
+              background: "#fff",
+              border: "1px solid #ddd",
+              borderRadius: 4,
+              fontSize: 13,
+              padding: "2px 8px",
+            }}
+            title="Page Mode"
+          >
+            <option value="infinite">Infinite</option>
+            <option value="numbered">Numbered</option>
+          </select>
+          {pageMode === "numbered" && (
+            <>
+              <button
+                className="toolbar-button"
+                onClick={addPage}
+                title="Add Page"
+                style={{
+                  fontWeight: "bold",
+                  fontSize: 18,
+                  width: 32,
+                  height: 32,
+                  padding: 0,
+                  marginRight: 4,
+                  background: "#e0e7ef",
+                  border: "1px solid #ccd6e0",
+                  borderRadius: "50%",
+                  color: "#333",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                +
+              </button>
+              <span style={{ fontSize: 13, marginLeft: 2, marginRight: 2 }}>
+                Page
+              </span>
+              <select
+                value={currentPage}
+                onChange={(e) => setCurrentPage(Number(e.target.value))}
+                className="toolbar-button"
+                style={{
+                  minWidth: 40,
+                  background: "#fff",
+                  border: "1px solid #ddd",
+                  borderRadius: 4,
+                  fontSize: 13,
+                  padding: "2px 6px",
+                  marginRight: 2,
+                }}
+                title="Current Page"
+              >
+                {pages.map((p, idx) => (
+                  <option key={p.id} value={idx}>
+                    {idx + 1}
+                  </option>
+                ))}
+              </select>
+              <span style={{ fontSize: 13, color: "#888" }}>/ {pages.length}</span>
+            </>
+          )}
+        </div>
+        <div className="toolbar-divider"></div>
       <div className="toolbar-dropdown">
         <button
           ref={fontFamilyButtonRef}

@@ -312,12 +312,13 @@ const NotesContent = () => {
         onMoveNote={handleMoveNote}
       />
       {activeNote ? (
-        <NoteEditor
-          note={activeNote}
-          onUpdate={handleUpdateNote}
-          onCreate={handleCreateNote}
-        />
-      ) : (
+  
+    <NoteEditor
+      note={activeNote}
+      onUpdate={handleUpdateNote}
+      onCreate={handleCreateNote}
+    />
+) : (
         <div
           className={`editor-container ${!isSidebarOpen ? "full-width" : ""}`}
         >

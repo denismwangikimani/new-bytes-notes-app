@@ -846,31 +846,39 @@ app.get("/notes", auth, async (req, res) => {
   }
 });
 
+// --- GET SINGLE NOTE (with pages array included) ---
+app.get("/notes/:id", auth, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const note = await Note.findOne({ _id: req.params.id, user: userId });
+    if (!note) {
+      return res.status(404).json({ message: "Note not found" });
+    }
+    res.status(200).json({ note });
+  } catch (error) {
+    res.status(500).json({ message: "Error getting note", error });
+  }
+});
+
 //create a new note
 app.post("/notes", auth, async (req, res) => {
-  let { title, content } = req.body;
-
-  // If title or content is blank, assign a default value or return an error
+  let { title, content, canvasImage, pages } = req.body;
   if (!title) title = "Untitled Note";
   if (!content) content = "";
 
   try {
-    // Get the user's ID from the decoded token
     const userId = req.user.userId;
-
-    // Return an error message if the user ID is not found in the token
     if (!userId) {
       return res.status(401).json({ message: "User ID not found in token" });
     }
-    // Create a new note to save in the database, by passing the title, content and the user id
     const newNote = new Note({
       title,
       content,
+      canvasImage: canvasImage || "",
+      pages: Array.isArray(pages) ? pages : [],
       user: userId,
     });
     await newNote.save();
-
-    // Respond with success message if note is created successfully
     res
       .status(201)
       .json({ message: "Note created successfully!", note: newNote });
@@ -879,26 +887,26 @@ app.post("/notes", auth, async (req, res) => {
   }
 });
 
-//update a note by id
+// Update a note by id (including pages)
 app.put("/notes/:id", auth, async (req, res) => {
-  const { title, content, canvasImage } = req.body;
+  const { title, content, canvasImage, pages } = req.body;
 
-  // Validate request data
   try {
-    // Get the user's ID from the decoded token
     const userId = req.user.userId;
-    // Find the note by id and update it
+    // Build update object dynamically
+    const updateObj = { title, content };
+    if (canvasImage !== undefined) updateObj.canvasImage = canvasImage;
+    if (pages !== undefined) updateObj.pages = pages;
+
     const note = await Note.findOneAndUpdate(
       { _id: req.params.id, user: userId },
-      { title, content, canvasImage },
+      updateObj,
       { new: true }
     );
-    // Respond with success message if note is updated successfully
     if (!note) {
       return res.status(404).json({ message: "Note not found" });
     }
     res.status(200).json({ message: "Note updated successfully", note });
-    // Respond with error message if note is not updated successfully
   } catch (error) {
     res.status(500).json({ message: "Error updating note", error });
   }
@@ -1218,8 +1226,8 @@ app.post("/canvas-calculate", async (req, res) => {
           "For example, if you see '50 / 2', your answer should be '50/2=25'. " +
           "If there are multiple expressions, list each on a new line. " +
           "Use the PEMDAS rule for solving mathematical expressions. " +
-          "DO NOT use JSON, backticks, or any other code formatting in your response. Just provide the plain text answer."
-        },
+          "DO NOT use JSON, backticks, or any other code formatting in your response. Just provide the plain text answer.",
+      },
     ];
 
     // Remove the data:image/png;base64, prefix if present

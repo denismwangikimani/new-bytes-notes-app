@@ -1,0 +1,15 @@
+/* .page-canvas.blank {
+  background: #fff;
+}
+.page-canvas.lines {
+  background: #fff;
+}
+.page-canvas.grid {
+  background: #fff;
+} */
+.page-controls {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  margin-bottom: 1rem;
+}
