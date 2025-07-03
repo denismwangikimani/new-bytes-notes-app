@@ -46,6 +46,66 @@ import { withHistory } from "slate-history";
 import { isHotkey } from "is-hotkey";
 import escapeHtml from "escape-html";
 
+// --- NEW PageCanvas Sub-component ---
+const PageCanvas = ({ pageType }) => {
+  const pageCanvasRef = useRef(null);
+  const parentRef = useRef(null);
+
+  useEffect(() => {
+    const canvas = pageCanvasRef.current;
+    const parent = parentRef.current;
+    if (!canvas || !parent) return;
+
+    const ctx = canvas.getContext("2d");
+    canvas.width = parent.scrollWidth;
+    canvas.height = parent.scrollHeight;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const drawLines = () => {
+      for (let y = 40; y < canvas.height; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.strokeStyle = "#e0e0e0";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+    };
+
+    const drawGrid = () => {
+      for (let x = 40; x < canvas.width; x += 40) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.strokeStyle = "#e0e0e0";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+      drawLines(); // Grid is just lines + vertical lines
+    };
+
+    if (pageType === "lines") drawLines();
+    if (pageType === "grid") drawGrid();
+  }, [pageType, parentRef.current?.scrollHeight]); // Redraw when content grows
+
+  return (
+    <div
+      ref={parentRef}
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+        zIndex: 0,
+        pointerEvents: "none",
+      }}
+    >
+      <canvas ref={pageCanvasRef} className="page-canvas" />
+    </div>
+  );
+};
+
 // --- Deserialize/Serialize Functions ---
 const ELEMENT_TAGS = {
   A: (el) => ({
@@ -338,6 +398,12 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
   const [calculationResult, setCalculationResult] = useState(null);
   const [isCalculating, setIsCalculating] = useState(false);
 
+  // --- Page State (NEW) ---
+  const [pageType, setPageType] = useState("blank"); // 'blank', 'lines', 'grid'
+  const [pageMode, setPageMode] = useState("infinite"); // 'infinite', 'numbered'
+  const [pages, setPages] = useState([]); // Array of page objects
+  const [currentPage, setCurrentPage] = useState(0); // Index of the current page
+
   // --- Refs for canvas and drawing ---
   const canvasRef = useRef(null);
   const editorWrapperRef = useRef(null);
@@ -356,7 +422,7 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
 
   const editor = useMemo(
     () => withMedia(withHistory(withReact(createEditor()))),
-    [note?._id]
+    []// [note?._id]
   );
 
   const initialValue = useMemo(() => {
@@ -1785,8 +1851,22 @@ const NoteEditor = ({ note, onUpdate, onCreate }) => {
         shape={shape}
         onSetShape={setShape}
         onCalculate={handleCalculate}
+        // --- Add these new props ---
+        pageType={pageType}
+        setPageType={setPageType}
+        pageMode={pageMode}
+        setPageMode={setPageMode}
+        pages={pages}
+        addPage={() => {
+          // We will implement this logic later
+          console.log("Add page clicked");
+        }}
+        currentPage={currentPage}
+        setCurrentPage={setCurrentPage}
+        // --- End of new props ---
       />
       <div className="editor-content-wrapper" ref={editorWrapperRef}>
+        <PageCanvas pageType={pageType} />
         <input
           type="text"
           value={title}
